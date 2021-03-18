@@ -1,0 +1,8 @@
+name = "BlockDFT"
+uuid = "4174833f-8ad2-4dcf-87c4-e1a7d5f5dca4"
+authors = ["Daan Huybrechs <daan.huybrechs@cs.kuleuven.be>"]
+version = "0.1.0"
+
+[deps]
+FFTW = "7a1cc6ca-52ef-59f5-83cd-3a7055c09341"
+LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
