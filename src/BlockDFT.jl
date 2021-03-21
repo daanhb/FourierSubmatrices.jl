@@ -186,6 +186,31 @@ function mv(A::CenteredDFTBlock, x)
     u1 + u2
 end
 
+# In the harmonic variant we assume that N itself is a multiple of p
+function mv_harmonic(A::CenteredDFTBlock, x)
+    L = A.L; M = A.M; N = A.N
+    p = round(Int, L/N)
+    # Let's deal with this case for now
+    @assert N == M
+    @assert N*p == L
+    T = numtype(A)
+    D_M, D_N, c = blockshift(L, 1:M, 1:N, T)
+
+    v2 = A.V' * x
+    u2 = A.U * (A.S .* v2)
+
+    x13 = x - A.V * v2
+    w13 = fft(D_N * x13)
+    Q = round(Int, N*M/L)
+    t2 = zeros(Complex{T}, N)
+    t2[1:p:N] = w13[1:Q]
+    z1 = ifft(t2)
+    z1[Q+1:end] .= 0
+    u1 = D_M * fft(z1)[1:N]*p / c
+
+    u1 + u2
+end
+
 function dft_entry(L, k, l, ::Type{T} = Float64) where {T}
     Tpi = convert(T, pi)
     exp(-2*Tpi*im*(k-1)*(l-1)/L)
@@ -341,6 +366,12 @@ function mv(A::DFTBlock, x)
     y = conj(A.D_M) * y_shift * A.c
 end
 
+function mv_harmonic(A::DFTBlock, x)
+    x_shift = conj(A.D_N) * x
+    y_shift = mv_harmonic(A.center, x_shift)
+    y = conj(A.D_M) * y_shift * A.c
+end
+
 
 "A subblock of the length `L` iDFT matrix."
 struct iDFTBlock{T} <: AbstractMatrix{Complex{T}}
@@ -413,6 +444,13 @@ function blockdft(L, p, x::AbstractVector)
         end
     end
     y = vcat(y_blocks...)
+end
+
+"A plan for a block-based DFT transform."
+struct BlockDFTPlan{T}
+    N       ::  Int
+    p       ::  Int
+    blocks  ::  Array{DFTBlock{T},2}
 end
 
 end # module
