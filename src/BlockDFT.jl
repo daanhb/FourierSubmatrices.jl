@@ -13,12 +13,11 @@ export DFT_matrix, IDFT_matrix,
     pdpss_plunge
 
 
-# TODO: fix this routine
-estimate_plunge_size(N, L, threshold) =
-    max(1,min(round(Int, 10*log(N^2/L)),N))
+# TODO: derive proper heuristics or bounds for this routine
+estimate_plunge_size(L, N, threshold) = estimate_plunge_size(L, N, N, threshold)
 
 estimate_plunge_size(L, M, N, threshold) =
-    max(1,min(round(Int, 9*log(M*N/L)),N))
+    max(1,min(round(Int, 10*log(M*N/L)),N))
 
 
 numtype(A) = real(eltype(A))
@@ -219,15 +218,70 @@ function Base.getindex(A::iDFTMatrix, k::Int, l::Int)
 end
 
 
-function blockshift(L, I_M, I_N, ::Type{T} = Float64) where {T}
+"""
+Compute the map from the topleft `M x N` subblock `B = A[1:M,1:N]` of the
+`L x L` DFT matrix `A`, to the centered block `C` with the same size as `B`.
+
+The relation is given by `C = D_M * B * D_N / c`.
+"""
+function blockshift_center(L, M, N, ::Type{T} = Float64) where {T}
     Tpi = convert(T, pi)
-    pivot_N = (last(I_N)-first(I_N)) / T(2)
-    pivot_M = (last(I_M)-first(I_M)) / T(2)
     twiddle = exp(2*Tpi*im/L)
-    D_M = Diagonal(twiddle.^(pivot_N * (I_M .- 1)))
-    D_N = Diagonal(twiddle.^(pivot_M * (I_N .- 1)))
-    c = exp(2*Tpi*im * pivot_M * pivot_N / L)
+    pivot_N = (N-1) / T(2)
+    pivot_M = (M-1) / T(2)
+
+    D_M = Diagonal(twiddle.^(pivot_N * (0:M-1)))
+    D_N = Diagonal(twiddle.^(pivot_M * (0:N-1)))
+    c = twiddle^(pivot_N * pivot_M)
     D_M, D_N, c
+end
+
+
+"""
+Compute the map from a DFT subblock `B` with the given range to the top-left
+block `A` with the same size. The relation is `A = D_M * B * D_N`.
+"""
+function blockshift_topleft(L, I_M, I_N, ::Type{T} = Float64) where {T}
+    Tpi = convert(T, pi)
+    twiddle = exp(2*Tpi*im/L)
+
+    shift_N = first(I_N)-1
+    if shift_N > 0
+        D_M = Diagonal(twiddle.^(shift_N * (I_M .- 1)))
+    else
+        D_M = Diagonal(ones(Complex{T}, length(I_M)))
+    end
+    shift_M = first(I_M)-1
+    N = length(I_N)
+    if shift_M > 0
+        D_N = Diagonal(twiddle.^(shift_M * (0:N-1)))
+    else
+        D_N = Diagonal(ones(Complex{T}, length(I_N)))
+    end
+    D_M, D_N
+end
+
+
+"""
+Compute the map from a block with the given range to a centered block with the
+same size.
+"""
+function blockshift(L, I_M, I_N, ::Type{T} = Float64) where {T}
+    Dtl_M, Dtl_N = blockshift_topleft(L, I_M, I_N, T)
+    Dc_M, Dc_N, c = blockshift_center(L, length(I_M), length(I_N))
+    Dc_M*Dtl_M, Dc_N*Dtl_N, c
+    # Tpi = convert(T, pi)
+    # twiddle = exp(2*Tpi*im/L)
+    #
+    # M = length(I_M)
+    # N = length(I_N)
+    # pivot_N = (N-1) / T(2)
+    # pivot_M = (M-1) / T(2)
+    #
+    # Dc_M = Diagonal(twiddle.^(pivot_N * (0:M-1)))
+    # Dc_N = Diagonal(twiddle.^(pivot_M * (0:N-1)))
+    # c = exp(2*Tpi*im * (last(I_M)-first(I_M)) / T(2) * (last(I_N)-first(I_N)) / T(2) / L)
+    # D_M, D_N, c
 end
 
 
@@ -249,9 +303,25 @@ struct DFTBlock{T} <: AbstractMatrix{Complex{T}}
     L       ::  Int
     I_M     ::  UnitRange{Int}
     I_N     ::  UnitRange{Int}
+
+    center  ::  CenteredDFTBlock{T}
+    D_M     ::  Diagonal{Complex{T}, Vector{Complex{T}}}
+    D_N     ::  Diagonal{Complex{T}, Vector{Complex{T}}}
+    c       ::  Complex{T}
 end
 
 DFTBlock(L, I_M, I_N) = DFTBlock{Float64}(L, I_M, I_N)
+function DFTBlock{T}(L, I_M, I_N) where {T}
+    center = CenteredDFTBlock{T}(L, length(I_M), length(I_N))
+    D_M, D_N, c = blockshift(L, I_M, I_N, T)
+    DFTBlock{T}(L, I_M, I_N, center, D_M, D_N, c)
+end
+
+function DFTBlock{T}(L, I_M, I_N, center) where {T}
+    D_M, D_N, c = blockshift(L, I_M, I_N, T)
+    DFTBlock{T}(L, I_M, I_N, center, D_M, D_N, c)
+end
+
 
 Base.size(A::DFTBlock) = (length(A.I_M),length(A.I_N))
 function Base.getindex(A::DFTBlock, k::Int, l::Int)
@@ -263,6 +333,13 @@ blockshift(A::DFTBlock) = blockshift(A.L, A.I_M, A.I_N, numtype(A))
 
 pdpss(A::DFTBlock) = block_dft_pdpss(A.L, A.I_M, A.I_N, numtype(A))
 pdpss_plunge(A::DFTBlock) = block_dft_pdpss_plunge(A.L, A.I_M, A.I_N, numtype(A))
+
+
+function mv(A::DFTBlock, x)
+    x_shift = conj(A.D_N) * x
+    y_shift = mv(A.center, x_shift)
+    y = conj(A.D_M) * y_shift * A.c
+end
 
 
 "A subblock of the length `L` iDFT matrix."
@@ -311,5 +388,31 @@ function jacobi_prolate(L, M, N, T = Float64)
     SymTridiagonal(c, b)
 end
 
+
+function blockdft_blocks(N, p, ::Type{T} = Float64) where {T}
+    L = N*p
+    cb = CenteredDFTBlock{T}(L, N, N)
+    dftblocks = [DFTBlock{T}(L, (k-1)*N+1:k*N, (l-1)*N+1:l*N, cb) for k in 1:p, l in 1:p]
+end
+
+
+function blockdft(L, p, x::AbstractVector)
+    N = round(Int, L/p)
+    @assert N*p == L
+
+    T = eltype(x)
+    RT = real(T)
+    CT = Complex{RT}
+
+    dftblocks = blockdft_blocks(N, p, RT)
+    x_blocks = [x[(k-1)*N+1:k*N] for k in 1:p]
+    y_blocks = [zeros(CT, N) for k in 1:p]
+    for k in 1:p
+        for l in 1:p
+            y_blocks[k] += mv(dftblocks[k,l], x_blocks[l])
+        end
+    end
+    y = vcat(y_blocks...)
+end
 
 end # module
