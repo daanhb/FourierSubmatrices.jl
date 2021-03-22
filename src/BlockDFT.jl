@@ -1,6 +1,6 @@
 module BlockDFT
 
-using LinearAlgebra, FFTW
+using BlockArrays, FillArrays, FFTW, LinearAlgebra
 
 export DFT_matrix, IDFT_matrix,
     DFTBlock,
@@ -69,7 +69,7 @@ end
 "Compute the periodic discrete prolate spheroidal sequences associated with the plunge region."
 function pdpss_plunge(A::DiscreteProlateMatrix, threshold = eps(numtype(A)))
     L = A.L; M = A.M; N = A.N
-    mid = round(Int, M*N/L)
+    mid = ceil(Int, M*N/L)
     plunge_size = estimate_plunge_size(L, M, N, threshold)
     indices = max(1,mid-plunge_size>>1):min(N,mid+plunge_size>>1)
     V = pdpss_range(A, indices)
@@ -145,7 +145,7 @@ function centered_pdpss_plunge(L, M, N, ::Type{T} = Float64) where {T}
     V, I = pdpss_plunge(PV)
     U = pdpss_range(PU, I)
     S = zeros(Complex{T}, length(I))
-    mid = round(Int, M*N/L)
+    mid = ceil(Int, M*N/L)
     for l in 1:length(I)
         S[l] = sum(centered_dft_entry(L, M, N, mid, k, T)*V[k,l] for k in 1:N) / U[mid,l]
     end
@@ -187,7 +187,7 @@ function mv(A::CenteredDFTBlock, x)
 end
 
 # In the harmonic variant we assume that N itself is a multiple of p
-function mv_harmonic(A::CenteredDFTBlock, x)
+function mv_regular(A::CenteredDFTBlock, x)
     L = A.L; M = A.M; N = A.N
     p = round(Int, L/N)
     # Let's deal with this case for now
@@ -366,9 +366,9 @@ function mv(A::DFTBlock, x)
     y = conj(A.D_M) * y_shift * A.c
 end
 
-function mv_harmonic(A::DFTBlock, x)
+function mv_regular(A::DFTBlock, x)
     x_shift = conj(A.D_N) * x
-    y_shift = mv_harmonic(A.center, x_shift)
+    y_shift = mv_regular(A.center, x_shift)
     y = conj(A.D_M) * y_shift * A.c
 end
 
@@ -440,11 +440,94 @@ function blockdft(L, p, x::AbstractVector)
     y_blocks = [zeros(CT, N) for k in 1:p]
     for k in 1:p
         for l in 1:p
-            y_blocks[k] += mv(dftblocks[k,l], x_blocks[l])
+            y_blocks[k] += mv_regular(dftblocks[k,l], x_blocks[l])
         end
     end
     y = vcat(y_blocks...)
 end
+
+
+abstract type DFTBlockArray{T} <: AbstractBlockMatrix{T} end
+
+struct RegularDFTBlockArray{T,RT} <: DFTBlockArray{Complex{RT}}
+    N       ::  Int
+    p       ::  Int
+    blocks  ::  Matrix{DFTBlock{RT}}
+    t1      ::  Vector{T}
+    t2      ::  Vector{T}
+    x1      ::  BlockArray{T,1,Vector{Vector{Float64}},Tuple{BlockedUnitRange{StepRange{Int64,Int64}}}}
+    x2      ::  BlockArray{T,1,Vector{Vector{Float64}},Tuple{BlockedUnitRange{StepRange{Int64,Int64}}}}
+    y1      ::  BlockArray{T,1,Vector{Vector{Float64}},Tuple{BlockedUnitRange{StepRange{Int64,Int64}}}}
+    y2      ::  BlockArray{T,1,Vector{Vector{Float64}},Tuple{BlockedUnitRange{StepRange{Int64,Int64}}}}
+
+    function RegularDFTBlockArray{T,RT}(N, p) where {T,RT}
+        blocks = blockdft_blocks(N, p, RT)
+        plungesize = length(blocks[1].center.I)
+        new(N, p, blocks)
+    end
+end
+
+RegularDFTBlockArray{T}(args...) where {T} = RegularDFTBlockArray{T,real(T)}(args...)
+
+Base.axes(A::RegularDFTBlockArray) = map(blockedrange, (Fill(A.N, A.p), Fill(A.N, A.p)))
+function Base.getindex(A::DFTBlockArray, k::Int, l::Int)
+    checkbounds(A, k, l)
+    dft_entry(size(A,1), k, l, numtype(A))
+end
+
+Base.getindex(A::RegularDFTBlockArray, blockindex::Block{2}) =
+    A.blocks[blockindex.n[1],blockindex.n[2]]
+
+function mv(A::RegularDFTBlockArray{T,RT}, x::BlockVector) where {T,RT}
+    y = similar(x,Complex{RT})
+    mv!(y, A, x)
+end
+
+function mv!(y::BlockVector, A::RegularDFTBlockArray, x::BlockVector)
+    y .= 0
+    N = A.N
+    p = A.p
+    L = N*p
+    # t = A.t
+    block1 = A.blocks[1]
+    center = block1.center
+    D_M = block1.D_M
+    D_N = block1.D_N
+    c = block1.c
+    U2 = center.U
+    S2 = center.S
+    V2 = center.V
+    I2 = center.I
+    Q = round(Int, N/p)
+    T = eltype(x)
+
+    for l in 1:p
+        xb = x[Block(l)]
+        for k in 1:p
+            block = A.blocks[k,l]
+
+            x_shift = conj(block.D_N) * xb
+            v2 = V2' * x_shift
+            u2 = U2 * (S2 .* v2)
+
+            x13 = x_shift - V2 * v2
+            w13 = fft(D_N * x13)
+            t2 = zeros(Complex{T}, N)
+            t2[1:p:N] = w13[1:Q]
+            z1 = ifft(t2)
+            z1[Q+1:end] .= 0
+            u1 = D_M * fft(z1)[1:N]*p / c
+
+            y2 = conj(block.D_M) * (u1+u2) * block.c
+
+            y[Block(k)] += y2
+        end
+    end
+    y
+end
+
+
+# Base.getindex(A::RegularDFTBlockArray, )
 
 "A plan for a block-based DFT transform."
 struct BlockDFTPlan{T}
