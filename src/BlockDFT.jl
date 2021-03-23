@@ -90,7 +90,7 @@ struct CenteredDFTBlock{T} <: AbstractMatrix{Complex{T}}
     M   ::  Int
     N   ::  Int
     U   ::  Matrix{T}
-    S   ::  Vector{Complex{T}}
+    S   ::  Diagonal{Complex{T},Vector{Complex{T}}}
     V   ::  Matrix{T}
     I   ::  UnitRange{Int}
 
@@ -136,7 +136,7 @@ function centered_pdpss(L, M, N, ::Type{T} = Float64) where {T}
             S[l] = sum(centered_dft_entry(L, M, N, idx, k, T)*V[k,l] for k in 1:N) / U[idx,l]
         end
     end
-    U, S, V
+    U, Diagonal(S), V
 end
 
 function centered_pdpss_plunge(L, M, N, ::Type{T} = Float64) where {T}
@@ -149,7 +149,7 @@ function centered_pdpss_plunge(L, M, N, ::Type{T} = Float64) where {T}
     for l in 1:length(I)
         S[l] = sum(centered_dft_entry(L, M, N, mid, k, T)*V[k,l] for k in 1:N) / U[mid,l]
     end
-    U, S, V, I
+    U, Diagonal(S), V, I
 end
 
 function mv(A::CenteredDFTBlock, x)
@@ -160,7 +160,7 @@ function mv(A::CenteredDFTBlock, x)
     D_M, D_N, c = blockshift(L, 1:M, 1:N, T)
 
     v2 = A.V' * x
-    u2 = A.U * (A.S .* v2)
+    u2 = A.U * (A.S * v2)
 
     x13 = x - A.V * v2
     w13 = fft(D_N * x13)
@@ -197,7 +197,7 @@ function mv_regular(A::CenteredDFTBlock, x)
     D_M, D_N, c = blockshift(L, 1:M, 1:N, T)
 
     v2 = A.V' * x
-    u2 = A.U * (A.S .* v2)
+    u2 = A.U * (A.S * v2)
 
     x13 = x - A.V * v2
     w13 = fft(D_N * x13)
@@ -449,21 +449,31 @@ end
 
 abstract type DFTBlockArray{T} <: AbstractBlockMatrix{T} end
 
+const FFTPLAN{RT} = FFTW.cFFTWPlan{Complex{RT},-1,true,1,UnitRange{Int64}}
+const IFFTPLAN{RT} = AbstractFFTs.ScaledPlan{Complex{RT},FFTW.cFFTWPlan{Complex{RT},1,true,1,UnitRange{Int64}},RT}
+
 struct RegularDFTBlockArray{T,RT} <: DFTBlockArray{Complex{RT}}
     N       ::  Int
     p       ::  Int
     blocks  ::  Matrix{DFTBlock{RT}}
-    t1      ::  Vector{T}
-    t2      ::  Vector{T}
-    x1      ::  BlockArray{T,1,Vector{Vector{Float64}},Tuple{BlockedUnitRange{StepRange{Int64,Int64}}}}
-    x2      ::  BlockArray{T,1,Vector{Vector{Float64}},Tuple{BlockedUnitRange{StepRange{Int64,Int64}}}}
-    y1      ::  BlockArray{T,1,Vector{Vector{Float64}},Tuple{BlockedUnitRange{StepRange{Int64,Int64}}}}
-    y2      ::  BlockArray{T,1,Vector{Vector{Float64}},Tuple{BlockedUnitRange{StepRange{Int64,Int64}}}}
+    # Precomputed length-N FFT plans follow
+    FFT!    ::  FFTPLAN{RT}
+    IFFT!   ::  IFFTPLAN{RT}
+    # Temporary storage for an allocation-free matrix-vector product
+    t1      ::  Vector{Complex{RT}}
+    t2      ::  Vector{Complex{RT}}
+    t3      ::  Vector{Complex{RT}}
+    t4      ::  Vector{Complex{RT}}
+    t_plunge::  Vector{Complex{RT}}
 
     function RegularDFTBlockArray{T,RT}(N, p) where {T,RT}
+        CT = Complex{RT}
         blocks = blockdft_blocks(N, p, RT)
+        FFT! = plan_fft!(zeros(CT, N))
+        IFFT! = plan_ifft!(zeros(CT, N))
         plungesize = length(blocks[1].center.I)
-        new(N, p, blocks)
+        new(N, p, blocks, FFT!, IFFT!,
+            zeros(CT,N), zeros(CT,N), zeros(CT,N), zeros(CT,N), zeros(CT,plungesize))
     end
 end
 
@@ -483,44 +493,108 @@ function mv(A::RegularDFTBlockArray{T,RT}, x::BlockVector) where {T,RT}
     mv!(y, A, x)
 end
 
-function mv!(y::BlockVector, A::RegularDFTBlockArray, x::BlockVector)
-    y .= 0
-    N = A.N
-    p = A.p
-    L = N*p
-    # t = A.t
-    block1 = A.blocks[1]
-    center = block1.center
-    D_M = block1.D_M
-    D_N = block1.D_N
-    c = block1.c
+function mv!(y, A::DFTBlock, x, D_M1, D_N1)
+    T = eltype(x); RT = real(T); CT = Complex{RT}
+    N = length(A.I_N)
+    M = length(A.I_M)
+    @assert M==N
+    L = A.L
+    p = round(Int, L/N)
+    Q = round(Int, N/p)
+    center = A.center
+    PL = length(center.I)
+    block_D_M = A.D_M
+    block_D_N = A.D_N
+    c = A.c
     U2 = center.U
     S2 = center.S
     V2 = center.V
     I2 = center.I
+
+    x_shift = conj(block_D_N) * x
+    v2 = V2' * x_shift
+    u2 = U2 * (S2 * v2)
+
+    x13 = x_shift - V2 * v2
+    w13 = fft(D_N1 * x13)
+    t2 = zeros(CT, N)
+    t2[1:p:N] = w13[1:Q]
+    z1 = ifft(t2)
+    z1[Q+1:end] .= 0
+    u1 = D_M1 * fft(z1)[1:N]*p / c
+
+    y[:] = conj(block_D_M) * (u1+u2) * c
+end
+
+function mv!_noalloc(y, A::DFTBlock, x, D_M1, D_N1, t1, t2, t3, t_plunge, FFT!, IFFT!)
+    T = eltype(x); RT = real(T); CT = Complex{RT}
+    N = length(A.I_N)
+    M = length(A.I_M)
+    @assert M==N
+    L = A.L
+    p = round(Int, L/N)
     Q = round(Int, N/p)
-    T = eltype(x)
+    PL = length(t_plunge)
+    center = A.center
+    PL = length(center.I)
+    block_D_M = A.D_M
+    block_D_N = A.D_N
+    c = A.c
+    U2 = center.U
+    S2 = center.S
+    V2 = center.V
+    I2 = center.I
 
+    # t1 = conj(block_D_N) * x
+    ldiv!(t1, block_D_N, x)
+    # t_plunge = V2' * t1
+    mul!(t_plunge, V2', t1)
+    # t1 = t1 - V2 * t_plunge
+    mul!(t1, V2, t_plunge, -1, 1)
+
+    # t_plunge = S2  * t_plunge
+    # Note that we alias t_plunge here, which is fine because S2 is Diagonal
+    mul!(t_plunge, S2, t_plunge)
+    # t3 = U2 * t_plunge
+    mul!(t3, U2, t_plunge)
+
+    # t1 = D_N1 * t1
+    mul!(t1, D_N1, t1)
+    FFT! * t1
+    fill!(t2, 0)
+    # t2[1:p:N] .= t1[1:Q]
+    for k in 1:Q
+        t2[1+(k-1)*p] = t1[k]
+    end
+    IFFT! * t2
+    t2[Q+1:end] .= 0
+    FFT! * t2
+    # u1 = D_M1 * t2
+    mul!(t2, D_M1, t2)
+
+    # t3 = c*t3 + p*t2
+    axpby!(p, t2, c, t3)
+
+    # y = conj(block_D_M) * t3
+    ldiv!(y, block_D_M, t3)
+end
+
+
+function mv!(y::BlockVector, A::RegularDFTBlockArray, x::BlockVector)
+    fill!(y, 0)
+
+    block1 = A.blocks[1]
+    D_M1 = block1.D_M
+    D_N1 = block1.D_N
+    yb = A.t4
+
+    p = A.p
     for l in 1:p
-        xb = x[Block(l)]
         for k in 1:p
-            block = A.blocks[k,l]
-
-            x_shift = conj(block.D_N) * xb
-            v2 = V2' * x_shift
-            u2 = U2 * (S2 .* v2)
-
-            x13 = x_shift - V2 * v2
-            w13 = fft(D_N * x13)
-            t2 = zeros(Complex{T}, N)
-            t2[1:p:N] = w13[1:Q]
-            z1 = ifft(t2)
-            z1[Q+1:end] .= 0
-            u1 = D_M * fft(z1)[1:N]*p / c
-
-            y2 = conj(block.D_M) * (u1+u2) * block.c
-
-            y[Block(k)] += y2
+            mv!_noalloc(yb, A.blocks[k,l], x[Block(l)], D_M1, D_N1,
+                A.t1, A.t2, A.t3, A.t_plunge, A.FFT!, A.IFFT!)
+            # y[Block(k)] += yb
+            axpy!(1, yb, y[Block(k)])
         end
     end
     y
