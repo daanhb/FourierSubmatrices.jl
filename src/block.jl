@@ -14,6 +14,7 @@ end
 struct DFTMatrix{T} <: AbstractMatrix{Complex{T}}
     L       ::  Int
 end
+DFTMatrix(L) = DFTMatrix{Float64}(L)
 Base.size(A::DFTMatrix) = (A.L, A.L)
 function Base.getindex(A::DFTMatrix, k::Int, l::Int)
     checkbounds(A, k, l)
@@ -24,6 +25,7 @@ end
 struct iDFTMatrix{T} <: AbstractMatrix{Complex{T}}
     L       ::  Int
 end
+iDFTMatrix(L) = iDFTMatrix{Float64}(L)
 Base.size(A::iDFTMatrix) = (A.L, A.L)
 function Base.getindex(A::iDFTMatrix, k::Int, l::Int)
     checkbounds(A, k, l)
