@@ -20,7 +20,7 @@ function refine_eigenvalue(A, lambda, v, K=5)
     end
 end
 
-function LinearAlgebra.cond(A::DFTBlock)
+function LinearAlgebra.cond(A::DFTBlockPlan)
     T = prectype(A)
     N = A.L
     p,q = size(A)

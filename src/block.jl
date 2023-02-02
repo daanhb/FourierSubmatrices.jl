@@ -1,4 +1,12 @@
 
+"""
+Compute the diagonal scaling matrix of length `p` associated with the DFT
+of length `N`, raised to the power `l`.
+"""
+function dft_diagonal_scaling(N, p, l = 1, ::Type{T} = Float64) where T
+    omega = twiddle(N, T)
+    Diagonal([omega^(-(j-1)*l) for j in 1:p])
+end
 
 """
 Representation of a complex-symmetric subblock of the length `L` DFT matrix. The
@@ -7,7 +15,7 @@ block has dimensions `M x N`.
 Upon construction, this representation computes and stores a set of prolate
 vectors associated with the plunge region.
 """
-struct CenteredDFTBlock{T} <: AbstractMatrix{Complex{T}}
+struct CenteredDFTPlan{T} <: AbstractMatrix{Complex{T}}
     L   ::  Int
     M   ::  Int
     N   ::  Int
@@ -16,26 +24,19 @@ struct CenteredDFTBlock{T} <: AbstractMatrix{Complex{T}}
     V   ::  Matrix{T}
     I   ::  UnitRange{Int}
 
-    function CenteredDFTBlock{T}(L, M, N) where {T}
+    function CenteredDFTPlan{T}(L, M, N) where {T}
         U, S, V, I = centered_pdpss_plunge(L, M, N, T)
         new(L, M, N, U, S, V, I)
     end
 end
 
-CenteredDFTBlock(L, M, N) = CenteredDFTBlock{Float64}(L, M, N)
+CenteredDFTPlan(L, M, N) = CenteredDFTPlan{Float64}(L, M, N)
 
-Base.size(A::CenteredDFTBlock) = (A.M,A.N)
+Base.size(A::CenteredDFTPlan) = (A.M,A.N)
 
-function Base.getindex(A::CenteredDFTBlock, k::Int, l::Int)
+function Base.getindex(A::CenteredDFTPlan, k::Int, l::Int)
     checkbounds(A, k, l)
     centered_dft_entry(A.L, A.M, A.N, k, l, prectype(A))
-end
-
-function centered_dft_entry(L, M, N, k, l, ::Type{T} = Float64) where {T}
-    pivot_N = (N - 1) / T(2)
-    pivot_M = (M - 1) / T(2)
-    ω = twiddle(L, T)
-    ω^(-(k-1-pivot_M)*(l-1-pivot_N))
 end
 
 function centered_pdpss(L, M, N, ::Type{T} = Float64) where {T}
@@ -74,11 +75,6 @@ function centered_pdpss_plunge(L, M, N, ::Type{T} = Float64) where {T}
     U, Diagonal(S), V, I
 end
 
-
-function dft_diagonal_scaling(N, p, l, T = Float64)
-    omega = twiddle(N, T)
-    Diagonal([omega^(-(j-1)*l) for j in 1:p])
-end
 
 """
 Compute the map from the topleft `M x N` subblock `B = A[1:M,1:N]` of the
@@ -146,44 +142,44 @@ end
 
 
 "A subblock of the length `L` DFT matrix."
-struct DFTBlock{T} <: AbstractMatrix{Complex{T}}
+struct DFTBlockPlan{T} <: AbstractMatrix{Complex{T}}
     L       ::  Int
     I_M     ::  UnitRange{Int}
     I_N     ::  UnitRange{Int}
 
-    center_block    ::  CenteredDFTBlock{T}
+    center_block    ::  CenteredDFTPlan{T}
     D_M             ::  Diagonal{Complex{T}, Vector{Complex{T}}}
     D_N             ::  Diagonal{Complex{T}, Vector{Complex{T}}}
     c               ::  Complex{T}
 end
 
-DFTBlock(L, I_M, I_N) = DFTBlock{Float64}(L, I_M, I_N)
+DFTBlockPlan(L, I_M, I_N) = DFTBlockPlan{Float64}(L, I_M, I_N)
 
-DFTBlock{T}(L::Int, p::Int, q::Int) where {T} = DFTBlock(L, 1:p, 1:q)
-function DFTBlock{T}(L, I_M::UnitRange, I_N::UnitRange) where {T}
-    center_block = CenteredDFTBlock{T}(L, length(I_M), length(I_N))
+DFTBlockPlan{T}(L::Int, p::Int, q::Int) where {T} = DFTBlockPlan(L, 1:p, 1:q)
+function DFTBlockPlan{T}(L, I_M::UnitRange, I_N::UnitRange) where {T}
+    center_block = CenteredDFTPlan{T}(L, length(I_M), length(I_N))
     D_M, D_N, c = blockshift(L, I_M, I_N, T)
-    DFTBlock{T}(L, I_M, I_N, center_block, D_M, D_N, c)
+    DFTBlockPlan{T}(L, I_M, I_N, center_block, D_M, D_N, c)
 end
 
-function DFTBlock{T}(L, I_M, I_N, center) where {T}
+function DFTBlockPlan{T}(L, I_M, I_N, center) where {T}
     D_M, D_N, c = blockshift(L, I_M, I_N, T)
-    DFTBlock{T}(L, I_M, I_N, center, D_M, D_N, c)
+    DFTBlockPlan{T}(L, I_M, I_N, center, D_M, D_N, c)
 end
 
 
-Base.size(A::DFTBlock) = (length(A.I_M),length(A.I_N))
-function Base.getindex(A::DFTBlock, k::Int, l::Int)
+Base.size(A::DFTBlockPlan) = (length(A.I_M),length(A.I_N))
+function Base.getindex(A::DFTBlockPlan, k::Int, l::Int)
     checkbounds(A, k, l)
     dft_entry(A.L, A.I_M[k], A.I_N[l], prectype(A))
 end
 
-blockshift(A::DFTBlock) = blockshift(A.L, A.I_M, A.I_N, prectype(A))
+blockshift(A::DFTBlockPlan) = blockshift(A.L, A.I_M, A.I_N, prectype(A))
 
-pdpss(A::DFTBlock) = block_dft_pdpss(A.L, A.I_M, A.I_N, prectype(A))
-pdpss_plunge(A::DFTBlock) = block_dft_pdpss_plunge(A.L, A.I_M, A.I_N, prectype(A))
+pdpss(A::DFTBlockPlan) = block_dft_pdpss(A.L, A.I_M, A.I_N, prectype(A))
+pdpss_plunge(A::DFTBlockPlan) = block_dft_pdpss_plunge(A.L, A.I_M, A.I_N, prectype(A))
 
-function LinearAlgebra.svd(A::DFTBlock)
+function LinearAlgebra.svd(A::DFTBlockPlan)
     T = prectype(A)
     N = A.L
     p,q = size(A)

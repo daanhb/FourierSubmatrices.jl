@@ -17,13 +17,21 @@ function idft_entry(N, k, l, ::Type{T} = Float64) where T
     ω^((k-1)*(l-1))/N
 end
 
+"The `(k,l)` entry of a centered DFT subblock of size `p × q`."
+function centered_dft_entry(N, p, q, k, l, ::Type{T} = Float64) where T
+    pivot_q = (q - 1) / T(2)
+    pivot_p = (p - 1) / T(2)
+    ω = twiddle(N, T)
+    ω^(-(k-1-pivot_p)*(l-1-pivot_q))
+end
+
 
 
 "Supertype of discrete Fourier-type matrices."
-abstract type AbstractFourierMatrix{T} <: AbstractMatrix{Complex{T}} end
+abstract type FourierMatrix{T} <: AbstractMatrix{Complex{T}} end
 
 "The DFT matrix of size `N × N`."
-struct DFTMatrix{T} <: AbstractFourierMatrix{T}
+struct DFTMatrix{T} <: FourierMatrix{T}
     N       ::  Int
 end
 
@@ -39,7 +47,7 @@ end
 
 
 "The inverseDFT of size `N × N`."
-struct iDFTMatrix{T} <: AbstractFourierMatrix{T}
+struct iDFTMatrix{T} <: FourierMatrix{T}
     N       ::  Int
 end
 
@@ -51,4 +59,63 @@ Base.size(A::iDFTMatrix) = (A.N, A.N)
 function Base.getindex(A::iDFTMatrix, k::Int, l::Int)
     checkbounds(A, k, l)
     idft_entry(A.N, k, l, prectype(A))
+end
+
+
+"""
+Representation of a complex-symmetric subblock of the length `N` DFT matrix. The
+block has dimensions `p × q`.
+"""
+struct CenteredBlock{T} <: FourierMatrix{T}
+    N   ::  Int
+    p   ::  Int
+    q   ::  Int
+
+    function CenteredBlock{T}(N, p, q) where T
+        @assert 1 <= p <= N
+        @assert 1 <= q <= N
+        new(N, p, q)
+    end
+end
+
+CenteredBlock(N, p, q) = CenteredBlock{Float64}(N, p, q)
+
+dftlength(A::CenteredBlock) = A.N
+Base.size(A::CenteredBlock) = (A.p,A.q)
+
+function Base.getindex(A::CenteredBlock, k::Int, l::Int)
+    checkbounds(A, k, l)
+    centered_dft_entry(A.N, A.p, A.q, k, l, prectype(A))
+end
+
+
+"""
+A subblock of the `N × N` DFT matrix.
+
+The row and column selection are determined by unit ranges.
+"""
+struct DFTBlock{T} <: FourierMatrix{T}
+    N       ::  Int
+    Ip      ::  UnitRange{Int}  # row range
+    Iq      ::  UnitRange{Int}  # column range
+
+    function DFTBlock{T}(N, Ip, Iq) where T
+        @assert 1 <= first(Ip) <= N
+        @assert 1 <= last(Ip) <= N
+        @assert 1 <= first(Iq) <= N
+        @assert 1 <= last(Iq) <= N
+        new(N, Ip, Iq)
+    end
+end
+
+DFTBlock(N, P, Q) = DFTBlock{Float64}(N, P, Q)
+
+DFTBlock{T}(N::Int, p::Int, q::Int) where T = DFTBlock(N, 1:p, 1:q)
+
+dftlength(A::DFTBlock) = A.N
+Base.size(A::DFTBlock) = (length(A.Ip),length(A.Iq))
+
+function Base.getindex(A::DFTBlock{T}, k::Int, l::Int) where T
+    checkbounds(A, k, l)
+    dft_entry(A.N, A.Ip[k], A.Iq[l], T)
 end

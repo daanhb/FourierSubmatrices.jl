@@ -1,4 +1,4 @@
-function mv(A::CenteredDFTBlock, x)
+function mv(A::CenteredDFTPlan, x)
     L = A.L; M = A.M; N = A.N
     # Let's deal with this case for now
     @assert N == M
@@ -33,7 +33,7 @@ function mv(A::CenteredDFTBlock, x)
 end
 
 # In the regular variant we assume that L is a multiple of p
-function mv_regular(A::CenteredDFTBlock, x)
+function mv_regular(A::CenteredDFTPlan, x)
     L = A.L; M = A.M; N = A.N
     p = round(Int, L/N)
     # Let's deal with this case for now
@@ -58,20 +58,20 @@ function mv_regular(A::CenteredDFTBlock, x)
 end
 
 
-function mv(A::DFTBlock, x)
+function mv(A::DFTBlockPlan, x)
     x_shift = conj(A.D_N) * x
     y_shift = mv(A.center_block, x_shift)
     y = conj(A.D_M) * y_shift * A.c
 end
 
-function mv_regular(A::DFTBlock, x)
+function mv_regular(A::DFTBlockPlan, x)
     x_shift = conj(A.D_N) * x
     y_shift = mv_regular(A.center_block, x_shift)
     y = conj(A.D_M) * y_shift * A.c
 end
 
 
-function mv!(y, A::DFTBlock, x, D_M1, D_N1)
+function mv!(y, A::DFTBlockPlan, x, D_M1, D_N1)
     T = eltype(x); RT = real(T); CT = Complex{RT}
     N = length(A.I_N)
     M = length(A.I_M)
@@ -120,7 +120,7 @@ end
 
 
 # Results are returned in y_reduced and t_plunge
-function mv!_part1(y_reduced, A::DFTBlock, x, D_N1, t1, t_plunge, FFT!)
+function mv!_part1(y_reduced, A::DFTBlockPlan, x, D_N1, t1, t_plunge, FFT!)
     Q = length(y_reduced)
     block_D_N = A.D_N
     center = A.center_block
@@ -146,7 +146,7 @@ function mv!_part1(y_reduced, A::DFTBlock, x, D_N1, t1, t_plunge, FFT!)
 end
 
 
-function mv!_part2(y, A::DFTBlock, y_reduced, D_M1, t1, t2, t3, t_plunge, FFT!, IFFT!)
+function mv!_part2(y, A::DFTBlockPlan, y_reduced, D_M1, t1, t2, t3, t_plunge, FFT!, IFFT!)
     L = A.L
     N = length(A.I_N)
     p = round(Int, L/N)
@@ -169,16 +169,16 @@ end
 
 
 "A subblock of the length `L` iDFT matrix."
-struct iDFTBlock{T} <: AbstractMatrix{Complex{T}}
+struct iDFTBlockPlan{T} <: AbstractMatrix{Complex{T}}
     L       ::  Int
     I_M     ::  UnitRange{Int}
     I_N     ::  UnitRange{Int}
 end
 
-iDFTBlock(L, I_M, I_N) = iDFTBlock{Float64}(L, I_M, I_N)
+iDFTBlockPlan(L, I_M, I_N) = iDFTBlockPlan{Float64}(L, I_M, I_N)
 
-Base.size(A::iDFTBlock) = (length(A.I_M),length(A.I_N))
-function Base.getindex(A::iDFTBlock, k::Int, l::Int)
+Base.size(A::iDFTBlockPlan) = (length(A.I_M),length(A.I_N))
+function Base.getindex(A::iDFTBlockPlan, k::Int, l::Int)
     checkbounds(A, k, l)
     idft_entry(A.L, A.I_M[k], A.I_N[l], prectype(A))
 end
@@ -191,8 +191,8 @@ IDFT_matrix(L, ::Type{T} = Float64) where {T} = collect(iDFTMatrix{T}(L))
 
 function blockdft_blocks(N, p, ::Type{T} = Float64) where {T}
     L = N*p
-    cb = CenteredDFTBlock{T}(L, N, N)
-    dftblocks = [DFTBlock{T}(L, (k-1)*N+1:k*N, (l-1)*N+1:l*N, cb) for k in 1:p, l in 1:p]
+    cb = CenteredDFTPlan{T}(L, N, N)
+    dftblocks = [DFTBlockPlan{T}(L, (k-1)*N+1:k*N, (l-1)*N+1:l*N, cb) for k in 1:p, l in 1:p]
 end
 
 
@@ -216,15 +216,15 @@ function blockdft(L, p, x::AbstractVector)
 end
 
 
-abstract type DFTBlockArray{T} <: AbstractBlockMatrix{T} end
+abstract type DFTBlockPlanArray{T} <: AbstractBlockMatrix{T} end
 
 const FFTPLAN{RT} = FFTW.cFFTWPlan{Complex{RT},-1,true,1,UnitRange{Int64}}
 const IFFTPLAN{RT} = AbstractFFTs.ScaledPlan{Complex{RT},FFTW.cFFTWPlan{Complex{RT},1,true,1,UnitRange{Int64}},RT}
 
-struct RegularDFTBlockArray{T,RT} <: DFTBlockArray{Complex{RT}}
+struct RegularDFTBlockPlanArray{T,RT} <: DFTBlockPlanArray{Complex{RT}}
     N           ::  Int
     p           ::  Int
-    blocks      ::  Matrix{DFTBlock{RT}}
+    blocks      ::  Matrix{DFTBlockPlan{RT}}
     # Precomputed length-N FFT plans follow
     FFT!        ::  FFTPLAN{RT}
     IFFT!       ::  IFFTPLAN{RT}
@@ -236,7 +236,7 @@ struct RegularDFTBlockArray{T,RT} <: DFTBlockArray{Complex{RT}}
     t_plunge    ::  Vector{Complex{RT}}
     y_reduced   ::  Vector{Complex{RT}}
 
-    function RegularDFTBlockArray{T,RT}(N, p) where {T,RT}
+    function RegularDFTBlockPlanArray{T,RT}(N, p) where {T,RT}
         CT = Complex{RT}
         blocks = blockdft_blocks(N, p, RT)
         FFT! = plan_fft!(zeros(CT, N))
@@ -249,24 +249,24 @@ struct RegularDFTBlockArray{T,RT} <: DFTBlockArray{Complex{RT}}
     end
 end
 
-RegularDFTBlockArray{T}(args...) where {T} = RegularDFTBlockArray{T,real(T)}(args...)
+RegularDFTBlockPlanArray{T}(args...) where {T} = RegularDFTBlockPlanArray{T,real(T)}(args...)
 
-Base.axes(A::RegularDFTBlockArray) = map(blockedrange, (Fill(A.N, A.p), Fill(A.N, A.p)))
-function Base.getindex(A::DFTBlockArray, k::Int, l::Int)
+Base.axes(A::RegularDFTBlockPlanArray) = map(blockedrange, (Fill(A.N, A.p), Fill(A.N, A.p)))
+function Base.getindex(A::DFTBlockPlanArray, k::Int, l::Int)
     checkbounds(A, k, l)
     dft_entry(size(A,1), k, l, prectype(A))
 end
 
-Base.getindex(A::RegularDFTBlockArray, blockindex::Block{2}) =
+Base.getindex(A::RegularDFTBlockPlanArray, blockindex::Block{2}) =
     A.blocks[blockindex.n[1],blockindex.n[2]]
 
-function mv(A::RegularDFTBlockArray{T,RT}, x::BlockVector) where {T,RT}
+function mv(A::RegularDFTBlockPlanArray{T,RT}, x::BlockVector) where {T,RT}
     y = similar(x,Complex{RT})
     mv!(y, A, x)
 end
 
 
-function mv!(y::BlockVector, A::RegularDFTBlockArray, x::BlockVector)
+function mv!(y::BlockVector, A::RegularDFTBlockPlanArray, x::BlockVector)
     fill!(y, 0)
 
     block1 = A.blocks[1]
@@ -297,5 +297,5 @@ end
 struct BlockDFTPlan{T}
     N       ::  Int
     p       ::  Int
-    blocks  ::  Array{DFTBlock{T},2}
+    blocks  ::  Array{DFTBlockPlan{T},2}
 end
