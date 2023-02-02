@@ -1,9 +1,4 @@
 
-Nvalues = [31, 34]
-pvalues = [9, 10]
-qvalues = [5, 7]
-Tvalues = [Float64, BigFloat]
-
 "Is the given svd factorization accurate?"
 function correct_svd(A, u, s, v, tol)
     result = abs(cond(u)-1) < tol
@@ -62,6 +57,12 @@ function test_prolates(N, p, q, T)
     c2 = cond(Adense)
     @test abs(c1-c2)/c2 < sqrt(eps(T))
 end
+
+# we test all combinations of parity of N, p and q
+Nvalues = [31, 34]
+pvalues = [9, 10]
+qvalues = [5, 7]
+Tvalues = [Float64, BigFloat]
 
 @testset "Prolate vectors" begin
     for T in Tvalues

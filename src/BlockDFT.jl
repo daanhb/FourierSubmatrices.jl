@@ -7,6 +7,7 @@ export twiddle,
     DFTMatrix,
     iDFTMatrix,
     DFTBlock,
+    CenteredBlock,
     DiscreteProlateMatrix,
     jacobi_prolate,
     pdpss,
@@ -19,6 +20,5 @@ include("definitions.jl")
 include("prolate.jl")
 include("block.jl")
 include("conditioning.jl")
-include("mv.jl")
 
 end # module
