@@ -1,6 +1,7 @@
 module BlockDFT
 
-using BlockArrays, FillArrays, FFTW, LinearAlgebra
+using BlockArrays, FFTW
+using LinearAlgebra, GenericLinearAlgebra
 
 export twiddle,
     DFTMatrix,

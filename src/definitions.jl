@@ -100,17 +100,15 @@ struct DFTBlock{T} <: FourierMatrix{T}
     Iq      ::  UnitRange{Int}  # column range
 
     function DFTBlock{T}(N, Ip, Iq) where T
-        @assert 1 <= first(Ip) <= N
-        @assert 1 <= last(Ip) <= N
-        @assert 1 <= first(Iq) <= N
-        @assert 1 <= last(Iq) <= N
+        @assert length(Ip) <= N
+        @assert length(Iq) <= N
         new(N, Ip, Iq)
     end
 end
 
 DFTBlock(N, P, Q) = DFTBlock{Float64}(N, P, Q)
 
-DFTBlock{T}(N::Int, p::Int, q::Int) where T = DFTBlock(N, 1:p, 1:q)
+DFTBlock{T}(N::Int, p::Int, q::Int) where T = DFTBlock{T}(N, 1:p, 1:q)
 
 dftlength(A::DFTBlock) = A.N
 Base.size(A::DFTBlock) = (length(A.Ip),length(A.Iq))

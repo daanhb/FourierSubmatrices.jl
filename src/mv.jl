@@ -1,106 +1,106 @@
 function mv(A::CenteredDFTPlan, x)
-    L = A.L; M = A.M; N = A.N
+    N = A.N; p = A.p; q = A.q
     # Let's deal with this case for now
-    @assert N == M
+    @assert p == q
     T = prectype(A)
-    D_M, D_N, c = blockshift(L, 1:M, 1:N, T)
+    Dp, Dq, c = blockshift(N, 1:p, 1:q, T)
 
     v2 = A.V' * x
     u2 = A.U * (A.S * v2)
 
     x13 = x - A.V * v2
-    w13 = fft(D_N * x13)
-    Q = round(Int, N*M/L)
-    x1 = D_N' * ifft([w13[1:Q]; zeros(N-Q)])
+    w13 = fft(Dq * x13)
+    Q = round(Int, p*q/N)
+    x1 = Dq' * ifft([w13[1:Q]; zeros(q-Q)])
 
-    step = floor(Int, L/N)
-    while (step*N > L || round(Int,L/step)*step != L)
+    step = floor(Int, N/q)
+    while (step*q > N || round(Int,N/step)*step != N)
         step -= 1
         if step == 0
-            error("L should be divisible by a number greater than 1")
+            error("N should be divisible by a number greater than 1")
         end
     end
-    N2 = round(Int, L/step)
-    x1_e = [D_N * x1; zeros(N2-N)]
+    N2 = round(Int, N/step)
+    x1_e = [Dq * x1; zeros(N2-q)]
     t1 = fft(x1_e)
     t2 = zeros(Complex{T}, N2)
     t2[1:step:step*Q] = t1[1:Q]
     z1 = ifft(t2)
     z1[Q+1:end] .= 0
-    u1 = D_M * fft(z1)[1:N]*step / c
+    u1 = Dp * fft(z1)[1:q]*step / c
 
     u1 + u2
 end
 
 # In the regular variant we assume that L is a multiple of p
 function mv_regular(A::CenteredDFTPlan, x)
-    L = A.L; M = A.M; N = A.N
+    L = A.N; M = A.p; N = A.q
     p = round(Int, L/N)
     # Let's deal with this case for now
     @assert N == M
     @assert N*p == L
     T = prectype(A)
-    D_M, D_N, c = blockshift(L, 1:M, 1:N, T)
+    Dp, Dq, c = blockshift(L, 1:M, 1:N, T)
 
     v2 = A.V' * x
     u2 = A.U * (A.S * v2)
 
     x13 = x - A.V * v2
-    w13 = fft(D_N * x13)
+    w13 = fft(Dq * x13)
     Q = round(Int, N*M/L)
     t2 = zeros(Complex{T}, N)
     t2[1:p:N] = w13[1:Q]
     z1 = ifft(t2)
     z1[Q+1:end] .= 0
-    u1 = D_M * fft(z1)[1:N]*p / c
+    u1 = Dp * fft(z1)[1:N]*p / c
 
     u1 + u2
 end
 
 
 function mv(A::DFTBlockPlan, x)
-    x_shift = conj(A.D_N) * x
+    x_shift = conj(A.Dq) * x
     y_shift = mv(A.center_block, x_shift)
-    y = conj(A.D_M) * y_shift * A.c
+    y = conj(A.Dp) * y_shift * A.c
 end
 
 function mv_regular(A::DFTBlockPlan, x)
-    x_shift = conj(A.D_N) * x
+    x_shift = conj(A.Dq) * x
     y_shift = mv_regular(A.center_block, x_shift)
-    y = conj(A.D_M) * y_shift * A.c
+    y = conj(A.Dp) * y_shift * A.c
 end
 
 
-function mv!(y, A::DFTBlockPlan, x, D_M1, D_N1)
+function mv!(y, A::DFTBlockPlan, x, Dp1, Dq1)
     T = eltype(x); RT = real(T); CT = Complex{RT}
-    N = length(A.I_N)
-    M = length(A.I_M)
+    N = length(A.Iq)
+    M = length(A.Ip)
     @assert M==N
-    L = A.L
+    L = A.N
     p = round(Int, L/N)
     Q = round(Int, N/p)
     center = A.center_block
-    block_D_M = A.D_M
-    block_D_N = A.D_N
+    block_Dp = A.Dp
+    block_Dq = A.Dq
     c = A.c
     U2 = center.U
     S2 = center.S
     V2 = center.V
     I2 = center.I
 
-    x_shift = conj(block_D_N) * x
+    x_shift = conj(block_Dq) * x
     v2 = V2' * x_shift
     u2 = U2 * (S2 * v2)
 
     x13 = x_shift - V2 * v2
-    w13 = fft(D_N1 * x13)
+    w13 = fft(Dq1 * x13)
     t2 = zeros(CT, N)
     t2[1:p:N] = w13[1:Q]
     z1 = ifft(t2)
     z1[Q+1:end] .= 0
-    u1 = D_M1 * fft(z1)[1:N]*p / c
+    u1 = Dp1 * fft(z1)[1:N]*p / c
 
-    y[:] = conj(block_D_M) * (u1+u2) * c
+    y[:] = conj(block_Dp) * (u1+u2) * c
 end
 
 """
@@ -120,24 +120,24 @@ end
 
 
 # Results are returned in y_reduced and t_plunge
-function mv!_part1(y_reduced, A::DFTBlockPlan, x, D_N1, t1, t_plunge, FFT!)
+function mv!_part1(y_reduced, A::DFTBlockPlan, x, Dq1, t1, t_plunge, FFT!)
     Q = length(y_reduced)
-    block_D_N = A.D_N
+    block_Dq = A.Dq
     center = A.center_block
     S2 = center.S
     V2 = center.V
 
-    # t1 = conj(block_D_N) * x
+    # t1 = conj(block_Dq) * x
     # division avoids having to take conjugates here
-    ldiv!(t1, block_D_N, x)
+    ldiv!(t1, block_Dq, x)
     # t_plunge = V2' * t1
     mul!(t_plunge, V2', t1)
     # t1 = t1 - V2 * t_plunge
     mul!(t1, V2, t_plunge, -1, 1)
     # t_plunge = S2 * t_plunge
     mul!(t_plunge, S2, t_plunge)   # aliasing t_plunge is ok because S2 is diagonal
-    # t1 = D_N1 * t1
-    mul!(t1, D_N1, t1)
+    # t1 = Dq1 * t1
+    mul!(t1, Dq1, t1)
     FFT! * t1
     for i in 1:Q
         y_reduced[i] = t1[i]
@@ -146,12 +146,12 @@ function mv!_part1(y_reduced, A::DFTBlockPlan, x, D_N1, t1, t_plunge, FFT!)
 end
 
 
-function mv!_part2(y, A::DFTBlockPlan, y_reduced, D_M1, t1, t2, t3, t_plunge, FFT!, IFFT!)
-    L = A.L
-    N = length(A.I_N)
+function mv!_part2(y, A::DFTBlockPlan, y_reduced, Dp1, t1, t2, t3, t_plunge, FFT!, IFFT!)
+    L = A.N
+    N = length(A.Iq)
     p = round(Int, L/N)
     Q = length(y_reduced)
-    block_D_M = A.D_M
+    block_Dp = A.Dp
     c = A.c
     center = A.center_block
     U2 = center.U
@@ -159,28 +159,28 @@ function mv!_part2(y, A::DFTBlockPlan, y_reduced, D_M1, t1, t2, t3, t_plunge, FF
     # t3 = U2 * t_plunge
     mul!(t3, U2, t_plunge)
     upsample!(t2, t1, Q, p, FFT!, IFFT!)
-    # t2 = D_M1 * t2
-    mul!(t2, D_M1, t2)
+    # t2 = Dp1 * t2
+    mul!(t2, Dp1, t2)
     # t3 = c*t3 + p*t2
     axpby!(p, t2, c, t3)
-    # y = conj(block_D_M) * t3
-    ldiv!(y, block_D_M, t3)
+    # y = conj(block_Dp) * t3
+    ldiv!(y, block_Dp, t3)
 end
 
 
 "A subblock of the length `L` iDFT matrix."
 struct iDFTBlockPlan{T} <: AbstractMatrix{Complex{T}}
     L       ::  Int
-    I_M     ::  UnitRange{Int}
-    I_N     ::  UnitRange{Int}
+    Ip     ::  UnitRange{Int}
+    Iq     ::  UnitRange{Int}
 end
 
-iDFTBlockPlan(L, I_M, I_N) = iDFTBlockPlan{Float64}(L, I_M, I_N)
+iDFTBlockPlan(L, Ip, Iq) = iDFTBlockPlan{Float64}(L, Ip, Iq)
 
-Base.size(A::iDFTBlockPlan) = (length(A.I_M),length(A.I_N))
+Base.size(A::iDFTBlockPlan) = (length(A.Ip),length(A.Iq))
 function Base.getindex(A::iDFTBlockPlan, k::Int, l::Int)
     checkbounds(A, k, l)
-    idft_entry(A.L, A.I_M[k], A.I_N[l], prectype(A))
+    idft_entry(A.L, A.Ip[k], A.Iq[l], prectype(A))
 end
 
 
@@ -270,8 +270,8 @@ function mv!(y::BlockVector, A::RegularDFTBlockArray, x::BlockVector)
     fill!(y, 0)
 
     block1 = A.blocks[1]
-    D_M1 = block1.D_M
-    D_N1 = block1.D_N
+    Dp1 = block1.Dp
+    Dq1 = block1.Dq
     yb = A.t4
 
     y_reduced = A.y_reduced
@@ -283,8 +283,8 @@ function mv!(y::BlockVector, A::RegularDFTBlockArray, x::BlockVector)
     for l in 1:p
         for k in 1:p
             # yb = A.blocks[k,l] * x[Block(l)]
-            mv!_part1(y_reduced, A.blocks[k,l], x[Block(l)], D_N1, t1, t_plunge, FFT!)
-            mv!_part2(yb, A.blocks[k,l], y_reduced, D_M1, t1, t2, t3, t_plunge, FFT!, IFFT!)
+            mv!_part1(y_reduced, A.blocks[k,l], x[Block(l)], Dq1, t1, t_plunge, FFT!)
+            mv!_part2(yb, A.blocks[k,l], y_reduced, Dp1, t1, t2, t3, t_plunge, FFT!, IFFT!)
             # y[Block(k)] += yb
             axpy!(1, yb, y[Block(k)])
         end
