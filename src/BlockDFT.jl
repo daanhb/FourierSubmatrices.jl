@@ -18,7 +18,7 @@ prectype(A) = real(eltype(A))
 
 include("definitions.jl")
 include("prolate.jl")
-include("block.jl")
-include("conditioning.jl")
+include("svd.jl")
+include("cond.jl")
 
 end # module
