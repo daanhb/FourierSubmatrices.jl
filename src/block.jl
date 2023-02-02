@@ -1,39 +1,4 @@
 
-function dft_entry(L, k, l, ::Type{T} = Float64) where {T}
-    Tpi = convert(T, pi)
-    exp(-2*Tpi*im*(k-1)*(l-1)/L)
-end
-
-function idft_entry(L, k, l, ::Type{T} = Float64) where {T}
-    Tpi = convert(T, pi)
-    exp(2*Tpi*im*(k-1)*(l-1)/L)/L
-end
-
-
-"The DFT matrix of length `L`."
-struct DFTMatrix{T} <: AbstractMatrix{Complex{T}}
-    L       ::  Int
-end
-DFTMatrix(L) = DFTMatrix{Float64}(L)
-Base.size(A::DFTMatrix) = (A.L, A.L)
-function Base.getindex(A::DFTMatrix, k::Int, l::Int)
-    checkbounds(A, k, l)
-    dft_entry(A.L, k, l, numtype(A))
-end
-
-"The inverseDFT matrix of length `L`."
-struct iDFTMatrix{T} <: AbstractMatrix{Complex{T}}
-    L       ::  Int
-end
-iDFTMatrix(L) = iDFTMatrix{Float64}(L)
-Base.size(A::iDFTMatrix) = (A.L, A.L)
-function Base.getindex(A::iDFTMatrix, k::Int, l::Int)
-    checkbounds(A, k, l)
-    idft_entry(A.L, k, l, numtype(A))
-end
-
-
-
 
 """
 Representation of a complex-symmetric subblock of the length `L` DFT matrix. The
@@ -63,14 +28,14 @@ Base.size(A::CenteredDFTBlock) = (A.M,A.N)
 
 function Base.getindex(A::CenteredDFTBlock, k::Int, l::Int)
     checkbounds(A, k, l)
-    centered_dft_entry(A.L, A.M, A.N, k, l, numtype(A))
+    centered_dft_entry(A.L, A.M, A.N, k, l, prectype(A))
 end
 
 function centered_dft_entry(L, M, N, k, l, ::Type{T} = Float64) where {T}
-    Tpi = convert(T, pi)
     pivot_N = (N - 1) / T(2)
     pivot_M = (M - 1) / T(2)
-    exp(-2*Tpi*im * (k-1-pivot_M) * (l-1-pivot_N) / L)
+    ω = twiddle(L, T)
+    ω^(-(k-1-pivot_M)*(l-1-pivot_N))
 end
 
 function centered_pdpss(L, M, N, ::Type{T} = Float64) where {T}
@@ -110,6 +75,10 @@ function centered_pdpss_plunge(L, M, N, ::Type{T} = Float64) where {T}
 end
 
 
+function dft_diagonal_scaling(N, p, l, T = Float64)
+    omega = twiddle(N, T)
+    Diagonal([omega^(-(j-1)*l) for j in 1:p])
+end
 
 """
 Compute the map from the topleft `M x N` subblock `B = A[1:M,1:N]` of the
@@ -118,14 +87,13 @@ Compute the map from the topleft `M x N` subblock `B = A[1:M,1:N]` of the
 The relation is given by `C = D_M * B * D_N / c`.
 """
 function blockshift_center(L, M, N, ::Type{T} = Float64) where {T}
-    Tpi = convert(T, pi)
-    twiddle = exp(2*Tpi*im/L)
+    ω = twiddle(L, T)
     pivot_N = (N-1) / T(2)
     pivot_M = (M-1) / T(2)
 
-    D_M = Diagonal(twiddle.^(pivot_N * (0:M-1)))
-    D_N = Diagonal(twiddle.^(pivot_M * (0:N-1)))
-    c = twiddle^(pivot_N * pivot_M)
+    D_M = Diagonal(ω.^(pivot_N * (0:M-1)))
+    D_N = Diagonal(ω.^(pivot_M * (0:N-1)))
+    c = ω^(pivot_N * pivot_M)
     D_M, D_N, c
 end
 
@@ -135,19 +103,18 @@ Compute the map from a DFT subblock `B` with the given range to the top-left
 block `A` with the same size. The relation is `A = D_M * B * D_N`.
 """
 function blockshift_topleft(L, I_M, I_N, ::Type{T} = Float64) where {T}
-    Tpi = convert(T, pi)
-    twiddle = exp(2*Tpi*im/L)
+    ω = twiddle(L, T)
 
     shift_N = first(I_N)-1
     if shift_N > 0
-        D_M = Diagonal(twiddle.^(shift_N * (I_M .- 1)))
+        D_M = Diagonal(ω.^(shift_N * (I_M .- 1)))
     else
         D_M = Diagonal(ones(Complex{T}, length(I_M)))
     end
     shift_M = first(I_M)-1
     N = length(I_N)
     if shift_M > 0
-        D_N = Diagonal(twiddle.^(shift_M * (0:N-1)))
+        D_N = Diagonal(ω.^(shift_M * (0:N-1)))
     else
         D_N = Diagonal(ones(Complex{T}, length(I_N)))
     end
@@ -184,17 +151,19 @@ struct DFTBlock{T} <: AbstractMatrix{Complex{T}}
     I_M     ::  UnitRange{Int}
     I_N     ::  UnitRange{Int}
 
-    center  ::  CenteredDFTBlock{T}
-    D_M     ::  Diagonal{Complex{T}, Vector{Complex{T}}}
-    D_N     ::  Diagonal{Complex{T}, Vector{Complex{T}}}
-    c       ::  Complex{T}
+    center_block    ::  CenteredDFTBlock{T}
+    D_M             ::  Diagonal{Complex{T}, Vector{Complex{T}}}
+    D_N             ::  Diagonal{Complex{T}, Vector{Complex{T}}}
+    c               ::  Complex{T}
 end
 
 DFTBlock(L, I_M, I_N) = DFTBlock{Float64}(L, I_M, I_N)
-function DFTBlock{T}(L, I_M, I_N) where {T}
-    center = CenteredDFTBlock{T}(L, length(I_M), length(I_N))
+
+DFTBlock{T}(L::Int, p::Int, q::Int) where {T} = DFTBlock(L, 1:p, 1:q)
+function DFTBlock{T}(L, I_M::UnitRange, I_N::UnitRange) where {T}
+    center_block = CenteredDFTBlock{T}(L, length(I_M), length(I_N))
     D_M, D_N, c = blockshift(L, I_M, I_N, T)
-    DFTBlock{T}(L, I_M, I_N, center, D_M, D_N, c)
+    DFTBlock{T}(L, I_M, I_N, center_block, D_M, D_N, c)
 end
 
 function DFTBlock{T}(L, I_M, I_N, center) where {T}
@@ -206,10 +175,62 @@ end
 Base.size(A::DFTBlock) = (length(A.I_M),length(A.I_N))
 function Base.getindex(A::DFTBlock, k::Int, l::Int)
     checkbounds(A, k, l)
-    dft_entry(A.L, A.I_M[k], A.I_N[l], numtype(A))
+    dft_entry(A.L, A.I_M[k], A.I_N[l], prectype(A))
 end
 
-blockshift(A::DFTBlock) = blockshift(A.L, A.I_M, A.I_N, numtype(A))
+blockshift(A::DFTBlock) = blockshift(A.L, A.I_M, A.I_N, prectype(A))
 
-pdpss(A::DFTBlock) = block_dft_pdpss(A.L, A.I_M, A.I_N, numtype(A))
-pdpss_plunge(A::DFTBlock) = block_dft_pdpss_plunge(A.L, A.I_M, A.I_N, numtype(A))
+pdpss(A::DFTBlock) = block_dft_pdpss(A.L, A.I_M, A.I_N, prectype(A))
+pdpss_plunge(A::DFTBlock) = block_dft_pdpss_plunge(A.L, A.I_M, A.I_N, prectype(A))
+
+function LinearAlgebra.svd(A::DFTBlock)
+    T = prectype(A)
+    N = A.L
+    p,q = size(A)
+    dft_submatrix_svd(N, p, q, T)
+end
+
+function dft_submatrix_svd(N, p, q, ::Type{T} = Float64) where T
+    J1 = jacobi_prolate(N, p, q, T)
+    J2 = jacobi_prolate(N, q, p, T)
+    D_p = dft_diagonal_scaling(N, p, (q-1)/2, T)
+    D_q = dft_diagonal_scaling(N, q, -(p-1)/2, T)
+    omega = twiddle(N, T)
+    E1,V1 = eigen(J1)
+    E2,V2 = eigen(J2)
+    K = min(p,q)
+    V = zeros(Complex{T},q,K)
+    for i in 1:K
+        V[:,i] = omega^(-(p-1)/2*(q-1)/2) * D_q*V1[:,i]
+    end
+    U = zeros(Complex{T},p,K)
+    for i in 1:K
+        U[:,i] = D_p*V2[:,i]
+    end
+    S = diag(U' * A * V)
+    factors = abs.(S) ./ S
+    s = abs.(S)
+    for i in 1:K
+        U[:,i] = U[:,i] / factors[i]
+    end
+    U, s, collect(V')'
+end
+
+function dft_submatrix_svd_with_fft(N, p, q, T = Float64)
+    J1 = jacobi_prolate(N, p, q, T)
+    D_q = diagonal_scaling(N, q, -(p-1)/2, T)
+    E1,V1 = eigen(J1)
+    omega = twiddle(N, T)
+    K = min(p,q)
+    V = zeros(Complex{T},q,K)
+    U = zeros(Complex{T},p,K)
+    S = zeros(T, K)
+    for i in 1:K
+        V[:,i] = omega^(-(p-1)/2*(q-1)/2) * D_q*V1[:,i]
+        uu = fft([V[:,i]; zeros(Complex{T}, N-q)])[1:p]
+        s = norm(uu)
+        U[:,i] = uu / s
+        S[i] = s
+    end
+    U, S, collect(V')'
+end

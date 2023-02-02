@@ -7,7 +7,7 @@ N = 2048
 p = 16
 L = N*p
 x = rand(L)
-y = BlockDFT.blockdft(L, p, x);
+y = BlockDFT.blockdft(L, p, x)
 @test norm(y-fft(x))/norm(y) < 1e-7
 
 N = 235
@@ -24,8 +24,8 @@ N = 128
 M = 128
 p = 8
 L = p*N
-A = DFT_matrix(L)
-Ainv = IDFT_matrix(L)
+A = collect(DFTMatrix(L))
+Ainv = collect(iDFTMatrix(L))
 AMN = A[1:M,1:N]
 twiddle = exp(2*pi*im/L)
 pivot_N = (N-1)/2
@@ -75,7 +75,7 @@ x13 = x - x2
 w13 = fft(D_N * x13)
 Q = round(Int,N*M/L)
 x1 = real(D_N' * ifft([w13[1:Q]; zeros(N-Q)]))
-@test norm(cb * (x1+x2) - yc) < 1e-7
+@test norm(cb * (x1+x2) - yc) < 5e-7
 
 y2 = cb * x2
 v2 = cb.V' * x

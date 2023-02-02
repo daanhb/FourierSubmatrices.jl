@@ -2,28 +2,30 @@ module BlockDFT
 
 using BlockArrays, FillArrays, FFTW, LinearAlgebra
 
-export DFT_matrix, IDFT_matrix,
+export twiddle,
+    DFTMatrix,
+    iDFTMatrix,
     DFTBlock,
-    sinc_matrix,
-    jacobi_prolate,
     CenteredDFTBlock,
-    DFTBlock,
+    DiscreteProlateMatrix,
+    jacobi_prolate,
     pdpss,
     pdpss_range,
     pdpss_plunge
 
 
-numtype(A) = real(eltype(A))
+prectype(A) = real(eltype(A))
 
+include("definitions.jl")
 include("prolate.jl")
 include("block.jl")
-
+include("conditioning.jl")
 
 function mv(A::CenteredDFTBlock, x)
     L = A.L; M = A.M; N = A.N
     # Let's deal with this case for now
     @assert N == M
-    T = numtype(A)
+    T = prectype(A)
     D_M, D_N, c = blockshift(L, 1:M, 1:N, T)
 
     v2 = A.V' * x
@@ -60,7 +62,7 @@ function mv_regular(A::CenteredDFTBlock, x)
     # Let's deal with this case for now
     @assert N == M
     @assert N*p == L
-    T = numtype(A)
+    T = prectype(A)
     D_M, D_N, c = blockshift(L, 1:M, 1:N, T)
 
     v2 = A.V' * x
@@ -81,13 +83,13 @@ end
 
 function mv(A::DFTBlock, x)
     x_shift = conj(A.D_N) * x
-    y_shift = mv(A.center, x_shift)
+    y_shift = mv(A.center_block, x_shift)
     y = conj(A.D_M) * y_shift * A.c
 end
 
 function mv_regular(A::DFTBlock, x)
     x_shift = conj(A.D_N) * x
-    y_shift = mv_regular(A.center, x_shift)
+    y_shift = mv_regular(A.center_block, x_shift)
     y = conj(A.D_M) * y_shift * A.c
 end
 
@@ -100,7 +102,7 @@ function mv!(y, A::DFTBlock, x, D_M1, D_N1)
     L = A.L
     p = round(Int, L/N)
     Q = round(Int, N/p)
-    center = A.center
+    center = A.center_block
     block_D_M = A.D_M
     block_D_N = A.D_N
     c = A.c
@@ -144,7 +146,7 @@ end
 function mv!_part1(y_reduced, A::DFTBlock, x, D_N1, t1, t_plunge, FFT!)
     Q = length(y_reduced)
     block_D_N = A.D_N
-    center = A.center
+    center = A.center_block
     S2 = center.S
     V2 = center.V
 
@@ -174,7 +176,7 @@ function mv!_part2(y, A::DFTBlock, y_reduced, D_M1, t1, t2, t3, t_plunge, FFT!, 
     Q = length(y_reduced)
     block_D_M = A.D_M
     c = A.c
-    center = A.center
+    center = A.center_block
     U2 = center.U
 
     # t3 = U2 * t_plunge
@@ -201,7 +203,7 @@ iDFTBlock(L, I_M, I_N) = iDFTBlock{Float64}(L, I_M, I_N)
 Base.size(A::iDFTBlock) = (length(A.I_M),length(A.I_N))
 function Base.getindex(A::iDFTBlock, k::Int, l::Int)
     checkbounds(A, k, l)
-    idft_entry(A.L, A.I_M[k], A.I_N[l], numtype(A))
+    idft_entry(A.L, A.I_M[k], A.I_N[l], prectype(A))
 end
 
 
@@ -262,7 +264,7 @@ struct RegularDFTBlockArray{T,RT} <: DFTBlockArray{Complex{RT}}
         blocks = blockdft_blocks(N, p, RT)
         FFT! = plan_fft!(zeros(CT, N))
         IFFT! = plan_ifft!(zeros(CT, N))
-        plungesize = length(blocks[1].center.I)
+        plungesize = length(blocks[1].center_block.I)
         Q = round(Int, N/p)
         new(N, p, blocks, FFT!, IFFT!,
             zeros(CT,N), zeros(CT,N), zeros(CT,N), zeros(CT,N),
@@ -275,7 +277,7 @@ RegularDFTBlockArray{T}(args...) where {T} = RegularDFTBlockArray{T,real(T)}(arg
 Base.axes(A::RegularDFTBlockArray) = map(blockedrange, (Fill(A.N, A.p), Fill(A.N, A.p)))
 function Base.getindex(A::DFTBlockArray, k::Int, l::Int)
     checkbounds(A, k, l)
-    dft_entry(size(A,1), k, l, numtype(A))
+    dft_entry(size(A,1), k, l, prectype(A))
 end
 
 Base.getindex(A::RegularDFTBlockArray, blockindex::Block{2}) =

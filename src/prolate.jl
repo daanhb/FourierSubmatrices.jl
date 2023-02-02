@@ -1,12 +1,10 @@
 
 
-# TODO: derive proper heuristics or bounds for this routine
 "Estimate the size of the plunge region with the given parameters for a given threshold."
 estimate_plunge_size(L, N, threshold) = estimate_plunge_size(L, N, N, threshold)
 
 estimate_plunge_size(L, M, N, threshold) =
     max(1,min(round(Int, 10*log(M*N/L)),N))
-
 
 "Return the Jacobi matrix that commutes with a discrete prolate matrix."
 function jacobi_prolate(L, M, N, T = Float64)
@@ -25,8 +23,8 @@ end
 """
 Representation of a periodic discrete prolate (PDP) matrix.
 
-The parameters are `L`, `M` and `N`. The matrix has size `N x N`. Element `A[i,j]`
-is given by `sin(M*(i-j)*pi/L) / (M*sin((i-j)*pi/L))` when `i` differs from `j`,
+The parameters are `L`, `M` and `N`. The matrix has size `N x N`. Elements are
+`A[i,j] = sin(M*(i-j)*pi/L) / (M*sin((i-j)*pi/L))` when `i` differs from `j`,
 and `1` when `i=j`.
 """
 struct DiscreteProlateMatrix{T} <: AbstractMatrix{T}
@@ -40,7 +38,7 @@ DiscreteProlateMatrix(L, M, N) = DiscreteProlateMatrix{Float64}(L, M, N)
 Base.size(A::DiscreteProlateMatrix) = (A.N,A.N)
 function Base.getindex(A::DiscreteProlateMatrix, k::Int, l::Int)
     checkbounds(A, k, l)
-    pdpss_matrix_entry(A.L, A.M, A.N, k, l, numtype(A))
+    pdpss_matrix_entry(A.L, A.M, A.N, k, l, prectype(A))
 end
 
 function pdpss_matrix_entry(L, M, N, k, l, ::Type{T} = Float64) where {T}
@@ -51,7 +49,7 @@ end
 "Compute the periodic discrete prolate spheroidal sequences."
 function pdpss(A::DiscreteProlateMatrix)
     L = A.L; M = A.M; N = A.N
-    T = numtype(A)
+    T = prectype(A)
     J = jacobi_prolate(L, M, N, T)
     E,V = eigen(J)
     V
@@ -60,34 +58,18 @@ end
 "Compute the given range of periodic discrete prolate spheroidal sequences."
 function pdpss_range(A::DiscreteProlateMatrix, range)
     L = A.L; M = A.M; N = A.N
-    T = numtype(A)
+    T = prectype(A)
     J = jacobi_prolate(L, M, N, T)
     E,V = eigen(J, range)
     V
 end
 
 "Compute the periodic discrete prolate spheroidal sequences associated with the plunge region."
-function pdpss_plunge(A::DiscreteProlateMatrix, threshold = eps(numtype(A)))
+function pdpss_plunge(A::DiscreteProlateMatrix, threshold = eps(prectype(A)))
     L = A.L; M = A.M; N = A.N
     mid = ceil(Int, M*N/L)
     plunge_size = estimate_plunge_size(L, M, N, threshold)
     indices = max(1,mid-plunge_size>>1):min(N,mid+plunge_size>>1)
     V = pdpss_range(A, indices)
     V, indices
-end
-
-
-function sinc_matrix(L, N, T = Float64)
-    A = zeros(T,N,N)
-    Tpi = convert(T, pi)
-    for i in 1:N
-        for j in 1:N
-            if i==j
-                A[i,j] = 1;
-            else
-                A[i,j] = sin(N*(i-j)*Tpi/L) / (N*sin((i-j)*Tpi/L))
-            end
-        end
-    end
-    A
 end
