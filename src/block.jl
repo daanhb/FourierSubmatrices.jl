@@ -38,15 +38,8 @@ The relation is given by `C = 1/c * Dp * B * Dq`.
 function blockshift_sub_to_top(N, Ip, Iq, ::Type{T} = Float64) where T
     ω = twiddle(N, T)
     shift_q = first(Iq)-1
-    Dp = dft_diagonal_scaling(N, length(Ip), shift_q, T)
-    # Dp2 = Dp2 * ω^(-shift_q*(first(Ip)-1))
-    # if shift_q > 0
-        # Dp = Diagonal(ω.^(-shift_q * (Ip .- 1)))
-    # else
-        # Dp = Diagonal(ones(Complex{T}, length(Iq)))
-    # end
-    # @show norm(Dp-Dp2)
     shift_p = first(Ip)-1
+    Dp = dft_diagonal_scaling(N, length(Ip), shift_q, T)
     Dq = dft_diagonal_scaling(N, length(Iq), shift_p, T)
     c = ω^(shift_q*(first(Ip)-1))
     Dp, Dq, c
@@ -81,6 +74,45 @@ function LinearAlgebra.mul!(y::AbstractVector, A::DFTBlock{T}, x::AbstractVector
     y
 end
 
+"Compute the singular value corresponding to the given singular vectors of `A`."
+function compute_singular_value(A::CenteredBlock, uk, vk)
+    sigma0 = uk' * (A*vk)
+    sigma = abs(sigma0)
+    uk = uk * sigma0/sigma
+    uk, sigma, vk
+end
+
+function LinearAlgebra.svd(A::CenteredBlock{T}) where T
+    N = dftlength(A)
+    p,q = size(A)
+    Pleft = DiscreteProlateMatrix{T}(N, q, p)
+    Pright = DiscreteProlateMatrix{T}(N, p, q)
+    U = complex(pdpss(Pleft))
+    V = complex(pdpss(Pright))
+    K = min(p,q)
+    S = zeros(Complex{T},K)
+    for k in 1:K
+        U[:,k],S[k],vk = compute_singular_value(A, U[:,k], V[:,k])
+    end
+    U,S,collect(V')'
+end
+
+function LinearAlgebra.cond(A::CenteredBlock{T}) where T
+    N = dftlength(A)
+    p,q = size(A)
+    Pleft = DiscreteProlateMatrix{T}(N, q, p)
+    Pright = DiscreteProlateMatrix{T}(N, p, q)
+    K = min(p,q)
+    U1 = complex(pdpss(Pleft, 1:1))
+    V1 = complex(pdpss(Pright, 1:1))
+    U2 = complex(pdpss(Pleft, K:K))
+    V2 = complex(pdpss(Pright, K:K))
+    u1,s1,v1 = compute_singular_value(A, U1[:,1], V1[:,1])
+    u2,s2,v2 = compute_singular_value(A, U2[:,1], V2[:,1])
+    s1/s2
+end
+
+LinearAlgebra.cond(A::DFTBlock) = cond(centered(A))
 
 """
 Representation of a complex-symmetric subblock of the length `N` DFT matrix. The
@@ -140,7 +172,7 @@ function centered_pdpss_plunge(N, p, q, ::Type{T} = Float64) where {T}
     PV = DiscreteProlateMatrix{T}(N, p, q)
     PU = DiscreteProlateMatrix{T}(N, p, q)
     V, I = pdpss_plunge(PV)
-    U = pdpss_range(PU, I)
+    U = pdpss(PU, I)
     S = zeros(Complex{T}, length(I))
     mid = ceil(Int, p*q/N)
     for l in 1:length(I)

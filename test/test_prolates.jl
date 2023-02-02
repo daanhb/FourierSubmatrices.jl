@@ -38,10 +38,18 @@ function test_prolates(N, p, q, T)
     @test norm(A - 1/c*Dp*A1*Dq) < sqrt(eps(T))
     @test norm(collect(A)*x-A*x) < sqrt(eps(T))
 
+    u,s,v = svd(Ac)
+    S1 = u'*Ac*v
+    S2 = copy(S1)
+    for i in 1:min(p,q)
+        S2[i,i] = 0
+    end
+    @test norm(S2) < sqrt(eps(T))
+
     Adense = collect(A)
     c1 = cond(A)
     c2 = cond(Adense)
-    @test abs(c1-c2)/c2 < 1e-4
+    @test abs(c1-c2)/c2 < sqrt(eps(T))
 end
 
 @testset "Prolate vectors" begin

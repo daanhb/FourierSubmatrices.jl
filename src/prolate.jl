@@ -47,7 +47,15 @@ function pdpss_matrix_entry(N, p, q, k, l, ::Type{T} = Float64) where T
     k == l ? one(T) : sin(F*p*(k-l)) / (p*sin(F*(k-l)))
 end
 
-"Compute the periodic discrete prolate spheroidal sequences."
+"""
+    pdpss(A::DiscreteProlateMatrix[, range])
+
+Compute the periodic discrete prolate spheroidal sequences.
+
+The PDPSS are computed from the eigenvalue decomposition of a commuting
+tridiagonal matrix. Optionally, a range of indices can be supplied and only
+the corresponding eigenvectors are computed.
+"""
 function pdpss(A::DiscreteProlateMatrix{T}) where T
     N = A.N; p = A.p; q = A.q
     J = jacobi_prolate(N, p, q, T)
@@ -55,11 +63,22 @@ function pdpss(A::DiscreteProlateMatrix{T}) where T
     V
 end
 
-"Compute the given range of periodic discrete prolate spheroidal sequences."
-function pdpss_range(A::DiscreteProlateMatrix{T}, range) where T
+function pdpss(A::DiscreteProlateMatrix{T}, range) where {T<:Base.IEEEFloat}
     N = A.N; p = A.p; q = A.q
     J = jacobi_prolate(N, p, q, T)
     E,V = eigen(J, range)
+    V
+end
+
+function pdpss(A::DiscreteProlateMatrix{T}, range) where T
+    N = A.N; p = A.p; q = A.q
+    J1 = jacobi_prolate(N, p, q, Float64)
+    E1,V1 = eigen(J1, range)
+    E = similar(E1, T)
+    V = similar(V1, T)
+    for k in 1:length(E1)
+        E[k],V[:,] = refine_eigenvalue(A, E1[k], V1[:,k])
+    end
     V
 end
 
@@ -69,6 +88,6 @@ function pdpss_plunge(A::DiscreteProlateMatrix, threshold = eps(prectype(A)))
     mid = ceil(Int, p*q/N)
     plunge_size = estimate_plunge_size(N, p, q, threshold)
     indices = max(1,mid-plunge_size>>1):min(N,mid+plunge_size>>1)
-    V = pdpss_range(A, indices)
+    V = pdpss(A, indices)
     V, indices
 end

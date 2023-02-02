@@ -10,7 +10,6 @@ export twiddle,
     DiscreteProlateMatrix,
     jacobi_prolate,
     pdpss,
-    pdpss_range,
     pdpss_plunge
 
 
