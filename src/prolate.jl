@@ -1,23 +1,22 @@
 
 
 "Estimate the size of the plunge region with the given parameters for a given threshold."
-estimate_plunge_size(L, N, threshold) = estimate_plunge_size(L, N, N, threshold)
+estimate_plunge_size(N, p, threshold) = estimate_plunge_size(N, p, p, threshold)
 
-estimate_plunge_size(L, M, N, threshold) =
-    max(1,min(round(Int, 10*log(M*N/L)),N))
+estimate_plunge_size(N, p, q, threshold) =
+    max(1,min(round(Int, 10*log(p*q/N)),min(p,q)))
 
 "Return the Jacobi matrix that commutes with a discrete prolate matrix."
-function jacobi_prolate(L, M, N, T = Float64)
-    k_c = 0:N-1
-    k_b = 0:(N-2)
-    Tpi = convert(T, pi)
+function jacobi_prolate(N, p, q, T = Float64)
+    k_c = 0:q-1
+    k_b = 0:(q-2)
+    F = T(pi)/N
 
-    c = cos.(Tpi/L*(2*k_c .- (N-1))) * cos(Tpi*M/L)
-    b = -sin.(Tpi/L*(k_b .+ 1)) .* sin.(Tpi/L*(N-1 .- k_b))
+    c = cos.(F*(2*k_c .- (q-1))) * cos(F*p)
+    b = -sin.(F*(k_b .+ 1)) .* sin.(F*(q-1 .- k_b))
 
     SymTridiagonal(c, b)
 end
-
 
 
 """
@@ -28,47 +27,47 @@ The parameters are `L`, `M` and `N`. The matrix has size `N x N`. Elements are
 and `1` when `i=j`.
 """
 struct DiscreteProlateMatrix{T} <: AbstractMatrix{T}
-    L   ::  Int                 # length of the underlying DFT
-    M   ::  Int                 # frequency of the sinc numerator
-    N   ::  Int                 # dimension of the PDP matrix
+    N   ::  Int                 # length of the underlying DFT
+    p   ::  Int                 # frequency of the sinc numerator
+    q   ::  Int                 # dimension of the PDP matrix
 end
 
-DiscreteProlateMatrix(L, M, N) = DiscreteProlateMatrix{Float64}(L, M, N)
+DiscreteProlateMatrix(N, p, q) = DiscreteProlateMatrix{Float64}(N, p, q)
 
-Base.size(A::DiscreteProlateMatrix) = (A.N,A.N)
-function Base.getindex(A::DiscreteProlateMatrix, k::Int, l::Int)
+dftlength(A::DiscreteProlateMatrix) = A.N
+Base.size(A::DiscreteProlateMatrix) = (A.q,A.q)
+
+function Base.getindex(A::DiscreteProlateMatrix{T}, k::Int, l::Int) where T
     checkbounds(A, k, l)
-    pdpss_matrix_entry(A.L, A.M, A.N, k, l, prectype(A))
+    pdpss_matrix_entry(A.N, A.p, A.q, k, l, T)
 end
 
-function pdpss_matrix_entry(L, M, N, k, l, ::Type{T} = Float64) where {T}
-    Tpi = convert(T, pi)
-    k == l ? one(T) : sin(M*(k-l)*Tpi/L) / (M*sin((k-l)*Tpi/L))
+function pdpss_matrix_entry(N, p, q, k, l, ::Type{T} = Float64) where T
+    F = T(pi)/N
+    k == l ? one(T) : sin(F*p*(k-l)) / (p*sin(F*(k-l)))
 end
 
 "Compute the periodic discrete prolate spheroidal sequences."
-function pdpss(A::DiscreteProlateMatrix)
-    L = A.L; M = A.M; N = A.N
-    T = prectype(A)
-    J = jacobi_prolate(L, M, N, T)
+function pdpss(A::DiscreteProlateMatrix{T}) where T
+    N = A.N; p = A.p; q = A.q
+    J = jacobi_prolate(N, p, q, T)
     E,V = eigen(J)
     V
 end
 
 "Compute the given range of periodic discrete prolate spheroidal sequences."
-function pdpss_range(A::DiscreteProlateMatrix, range)
-    L = A.L; M = A.M; N = A.N
-    T = prectype(A)
-    J = jacobi_prolate(L, M, N, T)
+function pdpss_range(A::DiscreteProlateMatrix{T}, range) where T
+    N = A.N; p = A.p; q = A.q
+    J = jacobi_prolate(N, p, q, T)
     E,V = eigen(J, range)
     V
 end
 
 "Compute the periodic discrete prolate spheroidal sequences associated with the plunge region."
 function pdpss_plunge(A::DiscreteProlateMatrix, threshold = eps(prectype(A)))
-    L = A.L; M = A.M; N = A.N
-    mid = ceil(Int, M*N/L)
-    plunge_size = estimate_plunge_size(L, M, N, threshold)
+    N = A.N; p = A.p; q = A.q
+    mid = ceil(Int, p*q/N)
+    plunge_size = estimate_plunge_size(N, p, q, threshold)
     indices = max(1,mid-plunge_size>>1):min(N,mid+plunge_size>>1)
     V = pdpss_range(A, indices)
     V, indices

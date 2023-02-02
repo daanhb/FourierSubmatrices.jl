@@ -10,7 +10,7 @@
     N = 235
     p = 7
     L = p*N
-    r = BlockDFT.RegularDFTBlockPlanArray{Float64}(N,p)
+    r = BlockDFT.RegularDFTBlockArray{Float64}(N,p)
     xb = BlockArray{ComplexF64}(undef, Fill(N,p))
     xb .= rand(ComplexF64, length(xb))
     yb = similar(xb)

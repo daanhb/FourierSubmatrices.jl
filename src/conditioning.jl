@@ -20,9 +20,8 @@ function refine_eigenvalue(A, lambda, v, K=5)
     end
 end
 
-function LinearAlgebra.cond(A::DFTBlockPlan)
-    T = prectype(A)
-    N = A.L
+function LinearAlgebra.cond(A::DFTBlock{T}) where T
+    N = dftlength(A)
     p,q = size(A)
     fourier_submatrix_cond(N, p, q, T)
 end
@@ -30,6 +29,10 @@ end
 function fourier_submatrix_cond(N, p, q, T = Float64)
     D_q = dft_diagonal_scaling(N, q, -(p-1)/2, T)
     omega = twiddle(N, T)
+
+    if p < q
+        return fourier_submatrix_cond(N, q, p, T)
+    end
 
     J1 = jacobi_prolate(N, p, q, Float64)
     f_E1,f_V1 = eigen(J1, 1:1)

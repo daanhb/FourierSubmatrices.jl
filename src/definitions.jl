@@ -119,3 +119,9 @@ function Base.getindex(A::DFTBlock{T}, k::Int, l::Int) where T
     checkbounds(A, k, l)
     dft_entry(A.N, A.Ip[k], A.Iq[l], T)
 end
+
+function centered(A::DFTBlock{T}) where T
+    N = dftlength(A)
+    p,q = size(A)
+    CenteredBlock{T}(N, p, q)
+end

@@ -39,7 +39,7 @@ function Base.getindex(A::CenteredDFTPlan, k::Int, l::Int)
     centered_dft_entry(A.L, A.M, A.N, k, l, prectype(A))
 end
 
-function centered_pdpss(L, M, N, ::Type{T} = Float64) where {T}
+function centered_pdpss(L, M, N, ::Type{T} = Float64) where T
     PV = DiscreteProlateMatrix{T}(L, M, N)
     PU = DiscreteProlateMatrix{T}(L, N, M)
     V = pdpss(PV)

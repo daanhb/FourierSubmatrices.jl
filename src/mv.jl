@@ -221,7 +221,7 @@ abstract type DFTBlockPlanArray{T} <: AbstractBlockMatrix{T} end
 const FFTPLAN{RT} = FFTW.cFFTWPlan{Complex{RT},-1,true,1,UnitRange{Int64}}
 const IFFTPLAN{RT} = AbstractFFTs.ScaledPlan{Complex{RT},FFTW.cFFTWPlan{Complex{RT},1,true,1,UnitRange{Int64}},RT}
 
-struct RegularDFTBlockPlanArray{T,RT} <: DFTBlockPlanArray{Complex{RT}}
+struct RegularDFTBlockArray{T,RT} <: DFTBlockPlanArray{Complex{RT}}
     N           ::  Int
     p           ::  Int
     blocks      ::  Matrix{DFTBlockPlan{RT}}
@@ -236,7 +236,7 @@ struct RegularDFTBlockPlanArray{T,RT} <: DFTBlockPlanArray{Complex{RT}}
     t_plunge    ::  Vector{Complex{RT}}
     y_reduced   ::  Vector{Complex{RT}}
 
-    function RegularDFTBlockPlanArray{T,RT}(N, p) where {T,RT}
+    function RegularDFTBlockArray{T,RT}(N, p) where {T,RT}
         CT = Complex{RT}
         blocks = blockdft_blocks(N, p, RT)
         FFT! = plan_fft!(zeros(CT, N))
@@ -249,24 +249,24 @@ struct RegularDFTBlockPlanArray{T,RT} <: DFTBlockPlanArray{Complex{RT}}
     end
 end
 
-RegularDFTBlockPlanArray{T}(args...) where {T} = RegularDFTBlockPlanArray{T,real(T)}(args...)
+RegularDFTBlockArray{T}(args...) where {T} = RegularDFTBlockArray{T,real(T)}(args...)
 
-Base.axes(A::RegularDFTBlockPlanArray) = map(blockedrange, (Fill(A.N, A.p), Fill(A.N, A.p)))
+Base.axes(A::RegularDFTBlockArray) = map(blockedrange, (Fill(A.N, A.p), Fill(A.N, A.p)))
 function Base.getindex(A::DFTBlockPlanArray, k::Int, l::Int)
     checkbounds(A, k, l)
     dft_entry(size(A,1), k, l, prectype(A))
 end
 
-Base.getindex(A::RegularDFTBlockPlanArray, blockindex::Block{2}) =
+Base.getindex(A::RegularDFTBlockArray, blockindex::Block{2}) =
     A.blocks[blockindex.n[1],blockindex.n[2]]
 
-function mv(A::RegularDFTBlockPlanArray{T,RT}, x::BlockVector) where {T,RT}
+function mv(A::RegularDFTBlockArray{T,RT}, x::BlockVector) where {T,RT}
     y = similar(x,Complex{RT})
     mv!(y, A, x)
 end
 
 
-function mv!(y::BlockVector, A::RegularDFTBlockPlanArray, x::BlockVector)
+function mv!(y::BlockVector, A::RegularDFTBlockArray, x::BlockVector)
     fill!(y, 0)
 
     block1 = A.blocks[1]
