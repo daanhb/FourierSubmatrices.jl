@@ -4,6 +4,17 @@ pvalues = [9, 10]
 qvalues = [5, 7]
 Tvalues = [Float64, BigFloat]
 
+"Is the given svd factorization accurate?"
+function correct_svd(A, u, s, v, tol)
+    result = abs(cond(u)-1) < tol
+    result = result && abs(cond(v)-1) < tol
+    result = result && all(t->t>=0, s)
+    D = zeros(eltype(A),size(A))
+    r = length(s)
+    D[1:r,1:r] = Diagonal(s)
+    result = result && (norm(A - u*D*v') < tol)
+end
+
 function test_prolates(N, p, q, T)
     Ac = BlockDFT.CenteredBlock{T}(N, p, q)
     Pleft = BlockDFT.DiscreteProlateMatrix{T}(N, q, p)
@@ -34,17 +45,17 @@ function test_prolates(N, p, q, T)
     @test norm(collect(A1)*x-A1*x) < sqrt(eps(T))
 
     A = DFTBlock{T}(N, 2:2+p-1, 3:3+q-1)
-    Dp, Dq, c = BlockDFT.blockshift_sub_to_top(N, A.Ip, A.Iq, T)
+    Dp, Dq, c = BlockDFT.blockshift_top_to_sub(N, A.Ip, A.Iq, T)
     @test norm(A - 1/c*Dp*A1*Dq) < sqrt(eps(T))
     @test norm(collect(A)*x-A*x) < sqrt(eps(T))
 
+    Dp, Dq, c = BlockDFT.blockshift_sub_to_center(N, A.Ip, A.Iq, T)
+    @test norm(Ac - 1/c*Dp*A*Dq) < sqrt(eps(T))
+
     u,s,v = svd(Ac)
-    S1 = u'*Ac*v
-    S2 = copy(S1)
-    for i in 1:min(p,q)
-        S2[i,i] = 0
-    end
-    @test norm(S2) < sqrt(eps(T))
+    @test correct_svd(Ac, u, s, v, sqrt(eps(T)))
+    u2,s2,v2 = svd(A)
+    @test correct_svd(A, u2, s2, v2, sqrt(eps(T)))
 
     Adense = collect(A)
     c1 = cond(A)

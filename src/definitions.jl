@@ -123,3 +123,9 @@ function centered(A::DFTBlock{T}) where T
     p,q = size(A)
     CenteredBlock{T}(N, p, q)
 end
+
+function topblock(A::DFTBlock{T}) where T
+    N = dftlength(A)
+    p,q = size(A)
+    DFTBlock{T}(N, p, q)
+end
