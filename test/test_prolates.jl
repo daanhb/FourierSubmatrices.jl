@@ -11,11 +11,11 @@ function correct_svd(A, u, s, v, tol)
 end
 
 function test_prolates(N, p, q, T)
-    Ac = BlockDFT.CenteredBlock{T}(N, p, q)
-    Pleft = BlockDFT.DiscreteProlateMatrix{T}(N, q, p)
-    Pright = BlockDFT.DiscreteProlateMatrix{T}(N, p, q)
-    Jleft = BlockDFT.jacobi_prolate(N, q, p, T)
-    Jright = BlockDFT.jacobi_prolate(N, p, q, T)
+    Ac = FourierSubmatrices.CenteredBlock{T}(N, p, q)
+    Pleft = FourierSubmatrices.DiscreteProlateMatrix{T}(N, q, p)
+    Pright = FourierSubmatrices.DiscreteProlateMatrix{T}(N, p, q)
+    Jleft = FourierSubmatrices.jacobi_prolate(N, q, p, T)
+    Jright = FourierSubmatrices.jacobi_prolate(N, p, q, T)
 
     # the discrete prolate matrices correspond to the normal equations
     @test norm(Ac'*Ac/p-Pright) < sqrt(eps(T))
@@ -32,7 +32,7 @@ function test_prolates(N, p, q, T)
     @test norm(Dleft-Diagonal(diag(Dleft))) < sqrt(eps(T))
 
     A1 = DFTBlock{T}(N, p, q)
-    Dp, Dq, c = BlockDFT.blockshift_top_to_center(N, p, q, T)
+    Dp, Dq, c = FourierSubmatrices.blockshift_top_to_center(N, p, q, T)
     @test norm(Ac - Dp*A1*Dq/c) < sqrt(eps(T))
 
     x = rand(T, q)
@@ -40,11 +40,11 @@ function test_prolates(N, p, q, T)
     @test norm(collect(A1)*x-A1*x) < sqrt(eps(T))
 
     A = DFTBlock{T}(N, 2:2+p-1, 3:3+q-1)
-    Dp, Dq, c = BlockDFT.blockshift_top_to_sub(N, A.Ip, A.Iq, T)
+    Dp, Dq, c = FourierSubmatrices.blockshift_top_to_sub(N, A.Ip, A.Iq, T)
     @test norm(A - 1/c*Dp*A1*Dq) < sqrt(eps(T))
     @test norm(collect(A)*x-A*x) < sqrt(eps(T))
 
-    Dp, Dq, c = BlockDFT.blockshift_sub_to_center(N, A.Ip, A.Iq, T)
+    Dp, Dq, c = FourierSubmatrices.blockshift_sub_to_center(N, A.Ip, A.Iq, T)
     @test norm(Ac - 1/c*Dp*A*Dq) < sqrt(eps(T))
 
     u,s,v = svd(Ac)

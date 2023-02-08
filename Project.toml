@@ -1,5 +1,5 @@
-name = "BlockDFT"
-uuid = "4174833f-8ad2-4dcf-87c4-e1a7d5f5dca4"
+name = "FourierSubmatrices"
+uuid = "b08f63b7-ed5f-487b-9da1-3a3bffd61bbb"
 authors = ["Daan Huybrechs <daan.huybrechs@kuleuven.be>"]
 version = "0.1.0"
 

@@ -1,4 +1,4 @@
-module BlockDFT
+module FourierSubmatrices
 
 using BlockArrays, FFTW
 using LinearAlgebra, GenericLinearAlgebra

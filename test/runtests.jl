@@ -3,6 +3,6 @@ using Test, BlockArrays, FillArrays
 using FFTW, GenericFFT
 using LinearAlgebra, GenericLinearAlgebra
 
-using BlockDFT
+using FourierSubmatrices
 
 include("test_prolates.jl")
