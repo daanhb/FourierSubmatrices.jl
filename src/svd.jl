@@ -138,8 +138,24 @@ function LinearAlgebra.svd(A::CenteredBlock{T}) where T
     U,S,collect(V')'
 end
 
+function pdpss(A::CenteredBlock{T}, range) where T
+    N = dftlength(A)
+    p,q = size(A)
+    Pleft = DiscreteProlateMatrix{T}(N, q, p)
+    Pright = DiscreteProlateMatrix{T}(N, p, q)
+    Vleft = pdpss(Pleft, range)
+    Vright = pdpss(Pright, range)
+    Vleft, Vright
+end
+
 function LinearAlgebra.svd(A::DFTBlock{T}) where T
     u,s,v = svd(centered(A))
     Dp, Dq, c = blockshift_center_to_sub(A.N, A.Ip, A.Iq, T)
     Dp*u/c, s, (v'*Dq)'
+end
+
+function pdpss(A::DFTBlock{T}, range) where T
+    Vleft,Vright = pdpss(centered(A), range)
+    Dp, Dq, c = blockshift_sub_to_center(A.N, A.Ip, A.Iq, T)
+    Dp'*Vleft, Dq*Vright
 end

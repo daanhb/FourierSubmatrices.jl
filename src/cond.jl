@@ -7,7 +7,7 @@ function dftcond_centered(A::CenteredBlock{T}) where T
     if q > p
         return dftcond_centered(CenteredBlock{T}(N, q, p))
     end
-    if min(p,q) > 10
+    if min(p,q) > 5
         dftcond_centered_sparse(A)
     else
         u,s,v = svd(A)

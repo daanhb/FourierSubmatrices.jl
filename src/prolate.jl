@@ -78,7 +78,7 @@ function pdpss(A::DiscreteProlateMatrix{T}, range) where T
     V = similar(V1, T)
     J = jacobi_prolate(N, p, q, T)
     for k in 1:length(E1)
-        E[k],V[:,] = refine_eigenvalue(J, E1[k], V1[:,k])
+        E[k],V[:,k] = refine_eigenvalue(J, E1[k], V1[:,k])
     end
     V
 end
