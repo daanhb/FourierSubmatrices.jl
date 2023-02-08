@@ -59,6 +59,7 @@ julia> u,s,v = svd(DFTBlock(N, p, q)); s[end]
 julia> u,s,v = svd(DFTBlock{BigFloat}(N, p, q)); s[end]
 7.204726671893715713779103966796263392431543875558953205738556163196036672198492e-26
 ```
+In contrast, the singular vectors are computed accurately in standard floating point precision, even when the corresponding singular values are small.
 
 ## Condition number
 
@@ -85,4 +86,6 @@ The latter statement involving `collect` computes the condition number of the de
 
 ## References
 
-The methods of this package are described in the paper "On the computation of the SVD of Fourier submatrices" by S. Dirckx, D. Huybrechs and R. Ongenae. The paper is available on the (arXiv)[https://arxiv.org/abs/2208.12583]. A recent (reference)[https://epubs.siam.org/doi/10.1137/20M1336837] for lower bounds on the condition number of Fourier submatrices is "How exponentially ill-conditioned are contiguous submatrices of the Fourier matrix?" by Alex Barnett.
+The methods of this package are described in the paper "On the computation of the SVD of Fourier submatrices" by S. Dirckx, D. Huybrechs and R. Ongenae. The paper is available on the [arXiv](https://arxiv.org/abs/2208.12583).
+
+A recent [reference](https://epubs.siam.org/doi/10.1137/20M1336837) for lower bounds on the condition number of Fourier submatrices is "How exponentially ill-conditioned are contiguous submatrices of the Fourier matrix?" by Alex Barnett.
