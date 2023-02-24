@@ -114,13 +114,14 @@ function compute_singular_value(A::AbstractArray, vk)
     norm(uk)
 end
 
-function compute_singular_value(A::AbstractArray, uk, vk)
-    # p,q = size(A)
-    # # mid = max(1,min(p,q)>>1)
-    # M,I = findmax(abs.(uk))
-    # Z = sum(A[I,k]*vk[k] for k in 1:length(vk))
-    # abs(Z/uk[I])
-    abs(uk'*(A*vk))
+compute_singular_value(A::AbstractArray, uk, vk) = abs(uk'*(A*vk))
+
+function pdpss(A::CenteredBlock{T}) where T
+    N = dftlength(A)
+    p,q = size(A)
+    Pleft = DiscreteProlateMatrix{T}(N, q, p)
+    Pright = DiscreteProlateMatrix{T}(N, p, q)
+    pdpss(Pleft), pdpss(Pright)
 end
 
 function LinearAlgebra.svd(A::CenteredBlock{T}) where T
@@ -152,6 +153,12 @@ function LinearAlgebra.svd(A::DFTBlock{T}) where T
     u,s,v = svd(centered(A))
     Dp, Dq, c = blockshift_center_to_sub(A.N, A.Ip, A.Iq, T)
     Dp*u/c, s, (v'*Dq)'
+end
+
+function pdpss(A::DFTBlock{T}) where T
+    Vleft, Vright = pdpss(centered(A))
+    Dp, Dq, c = blockshift_sub_to_center(A.N, A.Ip, A.Iq, T)
+    Dp'*Vleft, Dq*Vright
 end
 
 function pdpss(A::DFTBlock{T}, range) where T
