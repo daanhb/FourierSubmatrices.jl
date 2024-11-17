@@ -1,4 +1,5 @@
 
+## Part I: Periodic discrete prolate sequences
 
 "Estimate the size of the plunge region with the given parameters for a given threshold."
 estimate_plunge_size(N, p, threshold) = estimate_plunge_size(N, p, p, threshold)
@@ -6,8 +7,8 @@ estimate_plunge_size(N, p, threshold) = estimate_plunge_size(N, p, p, threshold)
 estimate_plunge_size(N, p, q, threshold) =
     max(1,min(round(Int, 10*log(p*q/N)),min(p,q)))
 
-"Return the Jacobi matrix that commutes with a discrete prolate matrix."
-function jacobi_prolate(N, p, q, T = Float64)
+"A tridiagonal matrix that commutes with a periodic discrete prolate matrix."
+function pdpss_tridiag_matrix(N, p, q, T = Float64)
     k_c = 0:q-1
     k_b = 0:(q-2)
     F = T(pi)/N
@@ -22,9 +23,9 @@ end
 """
 Representation of a periodic discrete prolate (PDP) matrix.
 
-The parameters are `L`, `M` and `N`. The matrix has size `N x N`. Elements are
-`A[i,j] = sin(M*(i-j)*pi/L) / (M*sin((i-j)*pi/L))` when `i` differs from `j`,
-and `1` when `i=j`.
+The parameters are `N`, `p` and `q`. The matrix has size `q x q`. Elements are
+`A[k,l] = sin(p*(k-l)*pi/N) / (p*sin((k-l)*pi/N))` when `k` differs from `l`,
+and `1` when `k=l`.
 """
 struct DiscreteProlateMatrix{T} <: AbstractMatrix{T}
     N   ::  Int                 # length of the underlying DFT
@@ -35,7 +36,7 @@ end
 DiscreteProlateMatrix(N, p, q) = DiscreteProlateMatrix{Float64}(N, p, q)
 
 dftlength(A::DiscreteProlateMatrix) = A.N
-Base.size(A::DiscreteProlateMatrix) = (A.q,A.q)
+Base.size(A::DiscreteProlateMatrix) = (A.q, A.q)
 
 function Base.getindex(A::DiscreteProlateMatrix{T}, k::Int, l::Int) where T
     checkbounds(A, k, l)
@@ -58,25 +59,25 @@ the corresponding eigenvectors are computed.
 """
 function pdpss(A::DiscreteProlateMatrix{T}) where T
     N = A.N; p = A.p; q = A.q
-    J = jacobi_prolate(N, p, q, T)
+    J = pdpss_tridiag_matrix(N, p, q, T)
     E,V = eigen(J)
     V
 end
 
 function pdpss(A::DiscreteProlateMatrix{T}, range) where {T<:Base.IEEEFloat}
     N = A.N; p = A.p; q = A.q
-    J = jacobi_prolate(N, p, q, T)
+    J = pdpss_tridiag_matrix(N, p, q, T)
     E,V = eigen(J, range)
     V
 end
 
 function pdpss(A::DiscreteProlateMatrix{T}, range) where T
     N = A.N; p = A.p; q = A.q
-    J1 = jacobi_prolate(N, p, q, Float64)
+    J1 = pdpss_tridiag_matrix(N, p, q, Float64)
     E1,V1 = eigen(J1, range)
     E = similar(E1, T)
     V = similar(V1, T)
-    J = jacobi_prolate(N, p, q, T)
+    J = pdpss_tridiag_matrix(N, p, q, T)
     for k in 1:length(E1)
         E[k],V[:,k] = refine_eigenvalue(J, E1[k], V1[:,k])
     end
@@ -91,4 +92,82 @@ function pdpss_plunge(A::DiscreteProlateMatrix, threshold = eps(prectype(A)))
     indices = max(1,mid-plunge_size>>1):min(N,mid+plunge_size>>1)
     V = pdpss(A, indices)
     V, indices
+end
+
+
+## Part II: Discrete prolate sequences
+
+
+"A tridiagonal matrix that commutes with the discrete prolate matrix."
+function prolate_tridiag_matrix(N, W)
+    T = typeof(W)
+    I = 0:N-1
+    J = 1:N-1
+    PI = T(pi)
+
+    c = ((N-one(T))/2 .- I).^2 * cos(2*PI*W)
+    b = one(T)/2 * J .* (N .- J)
+    SymTridiagonal(c, b)
+end
+
+
+"""
+Representation of a discrete prolate matrix with parameters `N` and `W`.
+
+We use the original notation of Slepian. The prolate matrix has entries
+`A[k,l] = sin(2πW*(k-l)) / (π*(k-l))`.
+"""
+struct ProlateMatrix{T} <: AbstractMatrix{T}
+    N   ::  Int
+    W   ::  T
+end
+
+
+Base.size(A::ProlateMatrix) = (A.N, A.N)
+
+function Base.getindex(A::ProlateMatrix{T}, k::Int, l::Int) where T
+    checkbounds(A, k, l)
+    prolate_matrix_entry(A.N, A.W, k, l)
+end
+
+function prolate_matrix_entry(N, W, k, l)
+    PI = one(W)*pi
+    k == l ? 2W : sin(2*PI*W*(k-l)) / (PI*(k-l))
+end
+
+"""
+    dpss(N::Int, W[, range])
+    dpss(A::ProlateMatrix[, range])
+
+Compute the discrete prolate spheroidal sequences.
+
+The DPSS are computed from the eigenvalue decomposition of a commuting
+tridiagonal matrix. Optionally, a range of indices can be supplied and only
+the corresponding eigenvectors are computed.
+"""
+dpss(A::ProlateMatrix, args...) = dpss(A.N, A.W, args...)
+
+function dpss(N::Int, W::AbstractFloat)
+    J = prolate_tridiag_matrix(N, W)
+    E,V = eigen(J)
+    V[:,N:-1:1]
+end
+
+function dpss(N::Int, W::Base.IEEEFloat, range)
+    J = prolate_tridiag_matrix(A.N, A.W)
+    E,V = eigen(J, range)
+    V
+end
+
+function dpss(N::Int, W, range)
+    J1 = prolate_tridiag_matrix(A.N, Float64(A.W))
+    E1,V1 = eigen(J1, range)
+    T = typeof(W)
+    E = similar(E1, T)
+    V = similar(V1, T)
+    J = dpss_tridiag_matrix(A.N, A.W)
+    for k in 1:length(E1)
+        E[k],V[:,k] = refine_eigenvalue(J, E1[k], V1[:,k])
+    end
+    V
 end

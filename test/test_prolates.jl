@@ -14,8 +14,8 @@ function test_prolates(N, p, q, T)
     Ac = FourierSubmatrices.CenteredBlock{T}(N, p, q)
     Pleft = FourierSubmatrices.DiscreteProlateMatrix{T}(N, q, p)
     Pright = FourierSubmatrices.DiscreteProlateMatrix{T}(N, p, q)
-    Jleft = FourierSubmatrices.jacobi_prolate(N, q, p, T)
-    Jright = FourierSubmatrices.jacobi_prolate(N, p, q, T)
+    Jleft = FourierSubmatrices.pdpss_tridiag_matrix(N, q, p, T)
+    Jright = FourierSubmatrices.pdpss_tridiag_matrix(N, p, q, T)
 
     # the discrete prolate matrices correspond to the normal equations
     @test norm(Ac'*Ac/p-Pright) < sqrt(eps(T))
