@@ -154,20 +154,22 @@ function dpss(N::Int, W::AbstractFloat)
 end
 
 function dpss(N::Int, W::Base.IEEEFloat, range)
-    J = prolate_tridiag_matrix(A.N, A.W)
-    E,V = eigen(J, range)
-    V
+    J = prolate_tridiag_matrix(N, W)
+    fliprange = (N+1-last(range)):(N+1-first(range))
+    E,V = eigen(J, fliprange)
+    V[:,end:-1:1]
 end
 
 function dpss(N::Int, W, range)
-    J1 = prolate_tridiag_matrix(A.N, Float64(A.W))
-    E1,V1 = eigen(J1, range)
+    J1 = prolate_tridiag_matrix(N, Float64(W))
+    fliprange = (N+1-last(range)):(N+1-first(range))
+    E1,V1 = eigen(J1, fliprange)
     T = typeof(W)
     E = similar(E1, T)
     V = similar(V1, T)
-    J = dpss_tridiag_matrix(A.N, A.W)
+    J = prolate_tridiag_matrix(N, W)
     for k in 1:length(E1)
         E[k],V[:,k] = refine_eigenvalue(J, E1[k], V1[:,k])
     end
-    V
+    V[:,end:-1:1]
 end
