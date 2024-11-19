@@ -1,5 +1,5 @@
 
-using Test, BlockArrays, FillArrays
+using Test, BlockArrays
 using FFTW, GenericFFT
 using LinearAlgebra, GenericLinearAlgebra
 

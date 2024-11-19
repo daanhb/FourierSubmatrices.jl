@@ -9,9 +9,12 @@ export twiddle,
     DFTBlock,
     CenteredBlock,
     DiscreteProlateMatrix,
-    jacobi_prolate,
     pdpss,
-    pdpss_plunge
+    pdpss_plunge,
+    pdpss_tridiag_matrix,
+    ProlateMatrix,
+    dpss,
+    prolate_tridiag_matrix
 
 
 prectype(A) = real(eltype(A))
@@ -20,5 +23,7 @@ include("definitions.jl")
 include("prolate.jl")
 include("svd.jl")
 include("cond.jl")
+
+include("deprecated.jl")
 
 end # module
